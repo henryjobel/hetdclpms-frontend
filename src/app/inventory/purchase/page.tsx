@@ -7,7 +7,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { DataTable } from "@/components/ui/data-table";
 import { inventoryApi, billsApi } from "@/lib/api";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/utils";
-import { ShoppingCart, Plus, Loader2, X } from "lucide-react";
+import { ShoppingCart, Plus, Loader2, X, Trash2 } from "lucide-react";
 
 interface Bill {
   id: string;
@@ -35,6 +35,8 @@ export default function PurchasePage() {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function fetchAll() {
     try {
@@ -91,10 +93,18 @@ export default function PurchasePage() {
     }
   }
 
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try { await billsApi.delete(deleteId); setDeleteId(null); fetchAll(); }
+    catch { /* noop */ } finally { setDeleting(false); }
+  }
+
   const totalAmount = bills.reduce((a, b) => a + b.amount, 0);
   const unpaid = bills.filter((b) => b.status === "unpaid");
 
   const tableData = bills.map((b) => ({
+    id: b.id,
     billNumber: b.billNumber,
     supplier: b.supplier?.name ?? "—",
     amount: b.amount,
@@ -133,11 +143,32 @@ export default function PurchasePage() {
                 { key: "date", header: "Purchase Date", render: (v) => formatDate(v as string) },
                 { key: "dueDate", header: "Due Date", render: (v) => v ? formatDate(v as string) : "—" },
                 { key: "status", header: "Status", render: (v) => <Badge variant={v === "paid" ? "success" : "warning"}>{v as string}</Badge> },
+                { key: "id", header: "Actions", render: (v) => (
+                  <button onClick={() => setDeleteId(v as string)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )},
               ]}
             />
           )}
         </CardContent>
       </Card>
+
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Purchase Bill?</h3>
+            <p className="text-sm text-gray-500 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white rounded-lg font-medium flex items-center gap-2">
+                {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

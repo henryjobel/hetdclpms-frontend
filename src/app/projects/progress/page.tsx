@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { projectsApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
-import { TrendingUp, Plus, Loader2, X } from "lucide-react";
+import { TrendingUp, Plus, Loader2, X, Trash2 } from "lucide-react";
 
 interface Project { id: string; name: string }
 interface ProgressLog {
@@ -29,6 +29,8 @@ export default function ProgressPage() {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     projectsApi.getAll().then((r) => {
@@ -65,6 +67,17 @@ export default function ProgressPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      await projectsApi.deleteProgress(selectedId, deleteId);
+      setDeleteId(null);
+      const r = await projectsApi.getProgress(selectedId);
+      setLogs(r.data.data || []);
+    } catch { /* noop */ } finally { setDeleting(false); }
   }
 
   // Latest progress per phase
@@ -142,9 +155,14 @@ export default function ProgressPage() {
                         <p className="text-sm font-medium text-gray-800">{l.phase}</p>
                         {l.remarks && <p className="text-xs text-gray-500 mt-0.5">{l.remarks}</p>}
                       </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-bold text-amber-600">{l.percentage}%</p>
-                        <p className="text-xs text-gray-400">{formatDate(l.logDate)}</p>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-bold text-amber-600">{l.percentage}%</p>
+                          <p className="text-xs text-gray-400">{formatDate(l.logDate)}</p>
+                        </div>
+                        <button onClick={() => setDeleteId(l.id)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg shrink-0">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -152,6 +170,22 @@ export default function ProgressPage() {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Progress Log?</h3>
+            <p className="text-sm text-gray-500 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white rounded-lg font-medium flex items-center gap-2">
+                {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

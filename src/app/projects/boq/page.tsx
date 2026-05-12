@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { projectsApi } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
-import { FileText, Plus, Loader2, X } from "lucide-react";
+import { FileText, Plus, Loader2, X, Pencil, Trash2 } from "lucide-react";
 
 interface Project { id: string; name: string }
 interface BOQItem {
@@ -28,9 +28,12 @@ export default function BOQPage() {
   const [items, setItems] = useState<BOQItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     projectsApi.getAll().then((r) => {
@@ -48,7 +51,29 @@ export default function BOQPage() {
     }).catch(() => setItems([])).finally(() => setLoading(false));
   }, [selectedId]);
 
-  async function handleCreate(e: React.FormEvent) {
+  function openCreate() {
+    setEditingId(null);
+    setForm(defaultForm);
+    setError("");
+    setShowModal(true);
+  }
+
+  function openEdit(item: BOQItem) {
+    setEditingId(item.id);
+    setForm({
+      description: item.description,
+      unit: item.unit,
+      quantity: String(item.quantity),
+      unitRate: String(item.unitRate),
+      materialCost: String(item.materialCost),
+      laborCost: String(item.laborCost),
+      phase: item.phase ?? "",
+    });
+    setError("");
+    setShowModal(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError("");
@@ -57,7 +82,7 @@ export default function BOQPage() {
       const rate = parseFloat(form.unitRate) || 0;
       const mat = parseFloat(form.materialCost) || 0;
       const lab = parseFloat(form.laborCost) || 0;
-      await projectsApi.createBOQ(selectedId, {
+      const payload = {
         description: form.description,
         unit: form.unit,
         quantity: qty,
@@ -66,20 +91,36 @@ export default function BOQPage() {
         laborCost: lab,
         totalCost: qty * rate + mat + lab,
         phase: form.phase || undefined,
-      });
+      };
+      if (editingId) {
+        await projectsApi.updateBOQ(editingId, payload);
+      } else {
+        await projectsApi.createBOQ(selectedId, payload);
+      }
       setShowModal(false);
       setForm(defaultForm);
       const r = await projectsApi.getBOQ(selectedId);
       setItems(r.data.data || []);
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to create BOQ item");
+      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to save BOQ item");
     } finally {
       setSaving(false);
     }
   }
 
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      await projectsApi.deleteBOQItem(deleteId);
+      setDeleteId(null);
+      const r = await projectsApi.getBOQ(selectedId);
+      setItems(r.data.data || []);
+    } catch { /* noop */ } finally { setDeleting(false); }
+  }
+
   const total = items.reduce((a, i) => a + i.totalCost, 0);
-  const tableData = items.map((i) => ({ ...i }));
+  const tableData = items.map((i) => ({ ...i, _raw: i }));
 
   return (
     <MainLayout title="Bill of Quantities (BOQ)" subtitle="Manage project BOQ items and cost estimates">
@@ -96,7 +137,7 @@ export default function BOQPage() {
             <div className="text-sm font-semibold text-gray-700">
               Total Estimated Cost: <span className="text-amber-600">{formatCurrency(total)}</span>
             </div>
-            <button onClick={() => setShowModal(true)}
+            <button onClick={openCreate}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">
               <Plus className="w-4 h-4" /> Add Item
             </button>
@@ -123,20 +164,52 @@ export default function BOQPage() {
                 { key: "materialCost", header: "Material", render: (v) => formatCurrency(v as number) },
                 { key: "laborCost", header: "Labour", render: (v) => formatCurrency(v as number) },
                 { key: "totalCost", header: "Total", render: (v) => <span className="font-semibold text-amber-700">{formatCurrency(v as number)}</span> },
+                {
+                  key: "_raw", header: "Actions",
+                  render: (v) => {
+                    const item = v as BOQItem;
+                    return (
+                      <div className="flex gap-1">
+                        <button onClick={() => openEdit(item)} className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => setDeleteId(item.id)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  }
+                },
               ]}
             />
           )}
         </CardContent>
       </Card>
 
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete BOQ Item?</h3>
+            <p className="text-sm text-gray-500 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white rounded-lg font-medium flex items-center gap-2">
+                {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h3 className="text-base font-semibold text-gray-900">Add BOQ Item</h3>
+              <h3 className="text-base font-semibold text-gray-900">{editingId ? "Edit BOQ Item" : "Add BOQ Item"}</h3>
               <button onClick={() => { setShowModal(false); setError(""); }}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
-            <form onSubmit={handleCreate} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
               {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Description *</label>
@@ -185,7 +258,7 @@ export default function BOQPage() {
                   className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
                 <button type="submit" disabled={saving}
                   className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white rounded-lg font-medium flex items-center gap-2">
-                  {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Add Item
+                  {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} {editingId ? "Save Changes" : "Add Item"}
                 </button>
               </div>
             </form>

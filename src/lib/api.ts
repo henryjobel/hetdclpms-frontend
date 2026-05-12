@@ -56,8 +56,10 @@ export const projectsApi = {
   updateTask: (projectId: string, taskId: string, data: unknown) => api.patch(`/api/projects/${projectId}/tasks/${taskId}`, data),
   getProgress: (projectId: string) => api.get(`/api/projects/${projectId}/progress`),
   createProgress: (projectId: string, data: unknown) => api.post(`/api/projects/${projectId}/progress`, data),
+  updateBOQ: (itemId: string, data: unknown) => api.put(`/api/projects/boq/${itemId}`, data),
   deleteBOQItem: (itemId: string) => api.delete(`/api/projects/boq/${itemId}`),
   deleteTask: (projectId: string, taskId: string) => api.delete(`/api/projects/${projectId}/tasks/${taskId}`),
+  deleteProgress: (projectId: string, logId: string) => api.delete(`/api/projects/${projectId}/progress/${logId}`),
   getQuotations: () => api.get("/api/projects/quotations/all"),
   createQuotation: (data: unknown) => api.post("/api/projects/quotations", data),
   updateQuotation: (id: string, data: unknown) => api.put(`/api/projects/quotations/${id}`, data),
@@ -136,6 +138,8 @@ export const inventoryApi = {
   deleteRequisition: (id: string) => api.delete(`/api/inventory/requisitions/${id}`),
   deleteRFQ: (id: string) => api.delete(`/api/inventory/rfqs/${id}`),
   deletePurchaseOrder: (id: string) => api.delete(`/api/inventory/purchase-orders/${id}`),
+  deleteAdjustment: (id: string) => api.delete(`/api/inventory/adjustments/${id}`),
+  deleteGRN: (id: string) => api.delete(`/api/inventory/grns/${id}`),
 };
 
 // ── Accounts ─────────────────────────────────────────────────────────
@@ -182,6 +186,7 @@ export const accountsApi = {
   deleteAccount: (id: string) => api.delete(`/api/accounts/chart/${id}`),
   deleteVoucher: (id: string) => api.delete(`/api/accounts/vouchers/${id}`),
   deleteInstallment: (id: string) => api.delete(`/api/accounts/installments/${id}`),
+  deleteBankTransaction: (id: string) => api.delete(`/api/accounts/bank-transactions/${id}`),
 };
 
 // Operations
@@ -216,6 +221,7 @@ export const usersApi = {
   getAll: () => api.get("/api/users"),
   create: (data: unknown) => api.post("/api/users", data),
   update: (id: string, data: unknown) => api.put(`/api/users/${id}`, data),
+  delete: (id: string) => api.delete(`/api/users/${id}`),
   toggleStatus: (id: string, isActive: boolean) =>
     api.patch(`/api/users/${id}/status`, { isActive }),
   getRoles: () => api.get("/api/users/roles"),

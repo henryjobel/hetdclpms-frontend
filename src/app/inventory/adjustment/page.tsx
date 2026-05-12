@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { inventoryApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
-import { AlertTriangle, Plus, Loader2, X } from "lucide-react";
+import { AlertTriangle, Plus, Loader2, X, Trash2 } from "lucide-react";
 
 interface Product { id: string; name: string; unit: string; stock: number }
 interface Adjustment {
@@ -29,6 +29,8 @@ export default function StockAdjustmentPage() {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function fetchAll() {
     try {
@@ -66,10 +68,18 @@ export default function StockAdjustmentPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try { await inventoryApi.deleteAdjustment(deleteId); setDeleteId(null); fetchAll(); }
+    catch { /* noop */ } finally { setDeleting(false); }
+  }
+
   const additions = adjustments.filter((a) => a.type === "add");
   const deductions = adjustments.filter((a) => a.type === "deduct");
 
   const tableData = adjustments.map((a) => ({
+    id: a.id,
     product: a.product.name,
     type: a.type,
     quantity: a.quantity,
@@ -127,11 +137,32 @@ export default function StockAdjustmentPage() {
                 { key: "reason", header: "Reason" },
                 { key: "adjustedBy", header: "Adjusted By" },
                 { key: "date", header: "Date", render: (v) => formatDate(v as string) },
+                { key: "id", header: "Actions", render: (v) => (
+                  <button onClick={() => setDeleteId(v as string)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )},
               ]}
             />
           )}
         </CardContent>
       </Card>
+
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Adjustment?</h3>
+            <p className="text-sm text-gray-500 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white rounded-lg font-medium flex items-center gap-2">
+                {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

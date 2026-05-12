@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTable } from "@/components/ui/data-table";
 import { inventoryApi, projectsApi } from "@/lib/api";
-import { FileText, Plus, Search, Loader2, X, Pencil } from "lucide-react";
+import { FileText, Plus, Search, Loader2, X, Pencil, Trash2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 interface RFQ {
@@ -48,6 +48,8 @@ export default function RFQPage() {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function fetchAll() {
     try {
@@ -78,6 +80,13 @@ export default function RFQPage() {
     setEditId(null);
     setError("");
     setForm(defaultForm);
+  }
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try { await inventoryApi.deleteRFQ(deleteId); setDeleteId(null); fetchAll(); }
+    catch { /* noop */ } finally { setDeleting(false); }
   }
 
   function openEdit(rfq: RFQ) {
@@ -168,14 +177,33 @@ export default function RFQPage() {
                 { key: "paymentTerms", header: "Terms", render: (v) => String(v || "-") },
                 { key: "deadline", header: "Deadline", render: (v) => v ? formatDate(v as string) : "-" },
                 { key: "status", header: "Status", render: (v, row) => <Badge variant={(row as unknown as RFQ).isSelected ? "success" : statusVariant[v as string] ?? "default"}>{(row as unknown as RFQ).isSelected ? "selected" : (v as string).toLowerCase()}</Badge> },
-                { key: "id", header: "Action", render: (_v, row) => (
-                  <button onClick={() => openEdit(row as unknown as RFQ)} className="p-1.5 rounded-lg bg-blue-50 text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
+                { key: "id", header: "Actions", render: (v, row) => (
+                  <div className="flex gap-1.5">
+                    <button onClick={() => openEdit(row as unknown as RFQ)} className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => setDeleteId(v as string)} className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
                 )},
               ]}
             />
           )}
         </CardContent>
       </Card>
+
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete RFQ?</h3>
+            <p className="text-sm text-gray-500 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white rounded-lg font-medium flex items-center gap-2">
+                {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTable } from "@/components/ui/data-table";
 import { inventoryApi } from "@/lib/api";
-import { Package, Plus, Search, Loader2, X } from "lucide-react";
+import { Package, Plus, Search, Loader2, X, Pencil, Trash2 } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 
 interface Product {
@@ -32,6 +32,9 @@ export default function ProductsPage() {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function fetchAll() {
     try {
@@ -49,24 +52,65 @@ export default function ProductsPage() {
   const filtered = products.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
   const totalValue = products.reduce((a, p) => a + p.stock * p.purchasePrice, 0);
 
-  async function handleCreate(e: React.FormEvent) {
+  function openCreate() {
+    setEditingId(null);
+    setForm(defaultForm);
+    setError("");
+    setShowModal(true);
+  }
+
+  function openEdit(p: Product) {
+    setEditingId(p.id);
+    setForm({
+      name: p.name,
+      category: p.category,
+      unit: p.unit,
+      stock: String(p.stock),
+      minStock: String(p.minStock),
+      purchasePrice: String(p.purchasePrice),
+    });
+    setError("");
+    setShowModal(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError("");
+    const payload = {
+      ...form,
+      stock: parseFloat(form.stock) || 0,
+      minStock: parseFloat(form.minStock) || 0,
+      purchasePrice: parseFloat(form.purchasePrice) || 0,
+    };
     try {
-      await inventoryApi.createProduct({
-        ...form,
-        stock: parseFloat(form.stock) || 0,
-        minStock: parseFloat(form.minStock) || 0,
-        purchasePrice: parseFloat(form.purchasePrice) || 0,
-      });
+      if (editingId) {
+        await inventoryApi.updateProduct(editingId, payload);
+      } else {
+        await inventoryApi.createProduct(payload);
+      }
       setShowModal(false);
       setForm(defaultForm);
+      setEditingId(null);
       fetchAll();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to add product");
+      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to save product");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      await inventoryApi.deleteProduct(deleteId);
+      setDeleteId(null);
+      fetchAll();
+    } catch {
+      // silent
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -94,7 +138,7 @@ export default function ProductsPage() {
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..."
                 className="pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400" />
             </div>
-            <button onClick={() => setShowModal(true)}
+            <button onClick={openCreate}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">
               <Plus className="w-4 h-4" /> Add Product
             </button>
@@ -120,20 +164,33 @@ export default function ProductsPage() {
                 { key: "isLow", header: "Status", render: (v) => (
                   <Badge variant={v ? "danger" : "success"}>{v ? "Low Stock" : "In Stock"}</Badge>
                 )},
+                { key: "id", header: "Actions", render: (_, row) => (
+                  <div className="flex gap-1.5">
+                    <button onClick={() => openEdit(row as unknown as Product)}
+                      className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => setDeleteId(row.id as string)}
+                      className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )},
               ]}
             />
           )}
         </CardContent>
       </Card>
 
+      {/* Add / Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h3 className="text-base font-semibold text-gray-900">Add Product</h3>
+              <h3 className="text-base font-semibold text-gray-900">{editingId ? "Edit Product" : "Add Product"}</h3>
               <button onClick={() => { setShowModal(false); setError(""); }}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
-            <form onSubmit={handleCreate} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
               {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Product Name *</label>
@@ -152,7 +209,7 @@ export default function ProductsPage() {
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Initial Stock</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Stock</label>
                   <input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400" />
                 </div>
@@ -172,10 +229,28 @@ export default function ProductsPage() {
                   className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
                 <button type="submit" disabled={saving}
                   className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white rounded-lg font-medium flex items-center gap-2">
-                  {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Add Product
+                  {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} {editingId ? "Update Product" : "Add Product"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm */}
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Product?</h3>
+            <p className="text-sm text-gray-500 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)}
+                className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white rounded-lg font-medium flex items-center gap-2">
+                {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Delete
+              </button>
+            </div>
           </div>
         </div>
       )}

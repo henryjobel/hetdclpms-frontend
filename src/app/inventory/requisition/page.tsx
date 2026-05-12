@@ -7,7 +7,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { DataTable } from "@/components/ui/data-table";
 import { inventoryApi, projectsApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
-import { ClipboardList, Plus, Search, Loader2, X, Check } from "lucide-react";
+import { ClipboardList, Plus, Search, Loader2, X, Check, Trash2 } from "lucide-react";
 
 interface Project { id: string; name: string }
 interface Product { id: string; name: string; unit: string }
@@ -47,6 +47,8 @@ export default function InventoryRequisitionPage() {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function fetchAll() {
     try {
@@ -71,6 +73,13 @@ export default function InventoryRequisitionPage() {
     (r) => r.project.name.toLowerCase().includes(search.toLowerCase()) ||
       r.requestedBy.toLowerCase().includes(search.toLowerCase())
   );
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try { await inventoryApi.deleteRequisition(deleteId); setDeleteId(null); fetchAll(); }
+    catch { /* noop */ } finally { setDeleting(false); }
+  }
 
   async function handleApprove(id: string, status: "APPROVED" | "REJECTED") {
     try {
@@ -154,25 +163,47 @@ export default function InventoryRequisitionPage() {
                 { key: "date", header: "Created", render: (v) => formatDate(v as string) },
                 { key: "status", header: "Status", render: (v) => <Badge variant={statusVariant[v as string] ?? "default"}>{v as string}</Badge> },
                 {
-                  key: "id", header: "Action",
-                  render: (id, row) => row.status === "PENDING" ? (
+                  key: "id", header: "Actions",
+                  render: (id, row) => (
                     <div className="flex gap-1">
-                      <button onClick={() => handleApprove(id as string, "APPROVED")}
-                        className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg" title="Approve">
-                        <Check className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => handleApprove(id as string, "REJECTED")}
-                        className="p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg" title="Reject">
-                        <X className="w-3.5 h-3.5" />
+                      {row.status === "PENDING" && (<>
+                        <button onClick={() => handleApprove(id as string, "APPROVED")}
+                          className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg" title="Approve">
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleApprove(id as string, "REJECTED")}
+                          className="p-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg" title="Reject">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </>)}
+                      <button onClick={() => setDeleteId(id as string)}
+                        className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg" title="Delete">
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  ) : null,
+                  ),
                 },
               ]}
             />
           )}
         </CardContent>
       </Card>
+
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Requisition?</h3>
+            <p className="text-sm text-gray-500 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white rounded-lg font-medium flex items-center gap-2">
+                {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/main-layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { projectsApi, usersApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
-import { ClipboardList, Plus, Loader2, X } from "lucide-react";
+import { ClipboardList, Plus, Loader2, X, Pencil, Trash2 } from "lucide-react";
 
 interface Project { id: string; name: string }
 interface User { id: string; name: string }
@@ -18,16 +18,14 @@ interface Task {
   progress: number;
   dueDate: string;
   assignedTo: { id: string; name: string };
+  userId?: string;
 }
 
-const statusVariant: Record<string, "default" | "info" | "success" | "warning" | "danger" | "gray"> = {
-  PENDING: "default", IN_PROGRESS: "info", COMPLETED: "success", CANCELLED: "gray",
-};
 const priorityVariant: Record<string, "default" | "info" | "success" | "warning" | "danger" | "gray"> = {
   LOW: "gray", MEDIUM: "default", HIGH: "warning", URGENT: "danger",
 };
 
-const defaultForm = { title: "", description: "", userId: "", priority: "MEDIUM", dueDate: "", progress: "0" };
+const defaultForm = { title: "", description: "", userId: "", priority: "MEDIUM", dueDate: "", progress: "0", status: "PENDING" };
 
 export default function TasksPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -36,9 +34,12 @@ export default function TasksPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     Promise.all([projectsApi.getAll(), usersApi.getAll()]).then(([pr, ur]) => {
@@ -57,29 +58,71 @@ export default function TasksPage() {
     }).catch(() => setTasks([])).finally(() => setLoading(false));
   }, [selectedId]);
 
-  async function handleCreate(e: React.FormEvent) {
+  async function refreshTasks() {
+    const r = await projectsApi.getTasks(selectedId);
+    setTasks(r.data.data || []);
+  }
+
+  function openCreate() {
+    setEditingId(null);
+    setForm(defaultForm);
+    setError("");
+    setShowModal(true);
+  }
+
+  function openEdit(task: Task) {
+    setEditingId(task.id);
+    setForm({
+      title: task.title,
+      description: task.description ?? "",
+      userId: task.userId ?? task.assignedTo?.id ?? "",
+      priority: task.priority,
+      dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : "",
+      progress: String(task.progress),
+      status: task.status,
+    });
+    setError("");
+    setShowModal(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.userId) { setError("Select an assignee"); return; }
     setSaving(true);
     setError("");
     try {
-      await projectsApi.createTask(selectedId, {
+      const payload = {
         title: form.title,
         description: form.description || undefined,
         userId: form.userId,
         priority: form.priority,
         dueDate: new Date(form.dueDate).toISOString(),
         progress: parseInt(form.progress) || 0,
-      });
+        status: form.status,
+      };
+      if (editingId) {
+        await projectsApi.updateTask(selectedId, editingId, payload);
+      } else {
+        await projectsApi.createTask(selectedId, payload);
+      }
       setShowModal(false);
       setForm(defaultForm);
-      const r = await projectsApi.getTasks(selectedId);
-      setTasks(r.data.data || []);
+      await refreshTasks();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to create task");
+      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to save task");
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      await projectsApi.deleteTask(selectedId, deleteId);
+      setDeleteId(null);
+      await refreshTasks();
+    } catch { /* noop */ } finally { setDeleting(false); }
   }
 
   const grouped = {
@@ -99,7 +142,7 @@ export default function TasksPage() {
           </select>
         </div>
         {selectedId && (
-          <button onClick={() => setShowModal(true)}
+          <button onClick={openCreate}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">
             <Plus className="w-4 h-4" /> Add Task
           </button>
@@ -137,9 +180,17 @@ export default function TasksPage() {
                           <div className="h-1.5 rounded-full bg-amber-500" style={{ width: `${t.progress}%` }} />
                         </div>
                       </div>
-                      <div className="flex items-center justify-between text-xs text-gray-500">
+                      <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
                         <span>👤 {t.assignedTo.name}</span>
                         <span>Due: {formatDate(t.dueDate)}</span>
+                      </div>
+                      <div className="flex gap-1 justify-end border-t border-gray-100 pt-2">
+                        <button onClick={() => openEdit(t)} className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => setDeleteId(t.id)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </CardContent>
                   </Card>
@@ -150,14 +201,30 @@ export default function TasksPage() {
         </div>
       )}
 
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Task?</h3>
+            <p className="text-sm text-gray-500 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white rounded-lg font-medium flex items-center gap-2">
+                {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h3 className="text-base font-semibold text-gray-900">Add Task</h3>
+              <h3 className="text-base font-semibold text-gray-900">{editingId ? "Edit Task" : "Add Task"}</h3>
               <button onClick={() => { setShowModal(false); setError(""); }}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
-            <form onSubmit={handleCreate} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
               {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Title *</label>
@@ -198,13 +265,22 @@ export default function TasksPage() {
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400" />
                 </div>
               </div>
+              {editingId && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    {["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"].map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+              )}
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => { setShowModal(false); setError(""); }}
                   className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
                 <button type="submit" disabled={saving}
                   className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white rounded-lg font-medium flex items-center gap-2">
                   {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <ClipboardList className="w-3.5 h-3.5" /> Add Task
+                  <ClipboardList className="w-3.5 h-3.5" /> {editingId ? "Save Changes" : "Add Task"}
                 </button>
               </div>
             </form>

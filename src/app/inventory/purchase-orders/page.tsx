@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTable } from "@/components/ui/data-table";
 import { inventoryApi, projectsApi } from "@/lib/api";
-import { ShoppingCart, DollarSign, Plus, Search, Loader2, X, Check, Send } from "lucide-react";
+import { ShoppingCart, DollarSign, Plus, Search, Loader2, X, Check, Send, Trash2 } from "lucide-react";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/utils";
 
 interface POItem {
@@ -54,6 +54,8 @@ export default function PurchaseOrdersPage() {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function fetchAll() {
     try {
@@ -82,6 +84,13 @@ export default function PurchaseOrdersPage() {
   );
 
   const total = pos.reduce((a, po) => a + po.totalAmount, 0);
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try { await inventoryApi.deletePurchaseOrder(deleteId); setDeleteId(null); fetchAll(); }
+    catch { /* noop */ } finally { setDeleting(false); }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -168,19 +177,22 @@ export default function PurchaseOrdersPage() {
                 { key: "deliveryDate", header: "Delivery", render: (v) => v ? formatDate(v as string) : "-" },
                 { key: "status", header: "Status", render: (v) => <Badge variant={statusVariant[v as string] ?? "default"}>{(v as string).toLowerCase()}</Badge> },
                 {
-                  key: "id", header: "Action",
+                  key: "id", header: "Actions",
                   render: (v, row) => (
                     <div className="flex gap-1">
-                      {row.status === "DRAFT" ? (
+                      {row.status === "DRAFT" && (
                         <button onClick={() => handleStatus(v as string, "SENT")} className="p-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg" title="Send">
                           <Send className="w-3.5 h-3.5" />
                         </button>
-                      ) : null}
-                      {row.status === "SENT" ? (
-                        <button onClick={() => handleStatus(v as string, "CONFIRMED")} className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg" title="Approve">
+                      )}
+                      {row.status === "SENT" && (
+                        <button onClick={() => handleStatus(v as string, "CONFIRMED")} className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg" title="Confirm">
                           <Check className="w-3.5 h-3.5" />
                         </button>
-                      ) : null}
+                      )}
+                      <button onClick={() => setDeleteId(v as string)} className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg" title="Delete">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   ),
                 },
@@ -189,6 +201,22 @@ export default function PurchaseOrdersPage() {
           )}
         </CardContent>
       </Card>
+
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Purchase Order?</h3>
+            <p className="text-sm text-gray-500 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white rounded-lg font-medium flex items-center gap-2">
+                {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
