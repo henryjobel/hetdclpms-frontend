@@ -46,6 +46,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
+  { label: "Project Module", href: "/project-module", icon: Layers },
   {
     label: "Projects",
     icon: Building2,

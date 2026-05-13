@@ -8,7 +8,8 @@ import { StatCard } from "@/components/ui/stat-card";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/utils";
 import { PROJECT_STATUS_LABELS } from "@/lib/constants";
 import { projectsApi } from "@/lib/api";
-import { Building2, TrendingUp, DollarSign, CheckCircle, Plus, Search, Loader2, X, Pencil, Trash2 } from "lucide-react";
+import { Building2, TrendingUp, DollarSign, CheckCircle, Plus, Search, Loader2, X, Pencil, Trash2, Eye } from "lucide-react";
+import Link from "next/link";
 
 interface Project {
   id: string;
@@ -181,7 +182,7 @@ export default function ProjectsPage() {
               <CardContent className="p-5">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 text-sm leading-tight truncate">{p.name}</h3>
+                    <Link href={`/projects/${p.id}`} className="font-semibold text-amber-700 hover:underline text-sm leading-tight truncate block">{p.name}</Link>
                     <p className="text-xs text-gray-400 mt-1">{p.location}</p>
                   </div>
                   <Badge variant={statusVariant[p.status] ?? "default"}>
@@ -207,6 +208,12 @@ export default function ProjectsPage() {
                   <span>End: {formatDate(p.endDate)}</span>
                 </div>
                 <div className="flex justify-end gap-2 mt-4">
+                  <Link
+                    href={`/projects/${p.id}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> View
+                  </Link>
                   <button
                     onClick={() => openEdit(p)}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700"
