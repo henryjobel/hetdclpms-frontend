@@ -1,2 +1,5 @@
-import { StubPage } from "@/components/project-module/stub-page";
-export default function Page() { return <StubPage title="Plot Distribution Report" />; }
+import { FlatReportPage } from "@/components/project-module/native-pages";
+
+export default function Page() {
+  return <FlatReportPage mode="plot" />;
+}

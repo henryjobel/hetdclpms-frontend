@@ -1,2 +1,1 @@
-import { StubPage } from "@/components/project-module/stub-page";
-export default function Page() { return <StubPage title="Billing Category" />; }
+export { default } from "@/app/settings/approval-layers/page";

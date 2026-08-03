@@ -1,13 +1,13 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import {
   ChevronDown, ChevronRight, Search, Settings, Bell,
   LayoutGrid, Folder, Share2, ClipboardList, Receipt,
-  Landmark, FileText, Building2, Phone, TrendingUp,
-  Loader2, UserCircle, Sun,
+  Landmark, FileText, Phone, TrendingUp,
+  Loader2, UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,27 +19,18 @@ interface NavChild {
 interface NavItem {
   label: string;
   icon?: React.ElementType;
-  isPrimary?: boolean;
   children?: NavChild[];
 }
 
 const NAV_ITEMS: NavItem[] = [
   {
-    label: "Projects",
+    label: "Project",
     icon: Folder,
-    isPrimary: true,
     children: [
       { label: "Project Type", href: "/project-module/project-type" },
-      { label: "Project", href: "/project-module" },
+      { label: "Project List", href: "/project-module" },
       { label: "Site", href: "/project-module/site" },
       { label: "Reports", href: "/project-module/reports" },
-    ],
-  },
-  {
-    label: "Project",
-    icon: Building2,
-    children: [
-      { label: "Project List", href: "/project-module" },
     ],
   },
   {
@@ -134,28 +125,67 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-function DropdownItem({ item, onClose }: { item: NavChild; onClose: () => void }) {
+function getChildLinks(items: NavChild[] = []): Array<{ label: string; href: string }> {
+  return items.flatMap((item) => {
+    const current = item.href ? [{ label: item.label, href: item.href }] : [];
+    return [...current, ...getChildLinks(item.children)];
+  });
+}
+
+const MODULE_LINKS = NAV_ITEMS.flatMap((item) =>
+  getChildLinks(item.children).map((child) => ({
+    ...child,
+    group: item.label,
+  }))
+);
+
+function hasActiveChild(items: NavChild[] | undefined, pathname: string): boolean {
+  return Boolean(items?.some((item) => {
+    if (item.href === pathname) return true;
+    if (item.href && item.href !== "/project-module" && pathname.startsWith(`${item.href}/`)) return true;
+    return hasActiveChild(item.children, pathname);
+  }));
+}
+
+function DropdownItem({ item, onClose, pathname }: { item: NavChild; onClose: () => void; pathname: string }) {
   const [subOpen, setSubOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const active = hasActiveChild([item], pathname);
+
+  function openSubmenu() {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setSubOpen(true);
+  }
+
+  function closeSubmenuSoon() {
+    closeTimer.current = setTimeout(() => setSubOpen(false), 180);
+  }
 
   if (item.children) {
     return (
       <div
         className="relative"
-        onMouseEnter={() => setSubOpen(true)}
-        onMouseLeave={() => setSubOpen(false)}
+        onMouseEnter={openSubmenu}
+        onMouseLeave={closeSubmenuSoon}
       >
-        <button className="w-full flex items-center justify-between px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+        <button className={cn(
+          "w-full flex items-center justify-between px-4 py-2 text-sm hover:bg-gray-50",
+          active ? "text-violet-700 bg-violet-50" : "text-gray-700"
+        )}>
           {item.label}
           <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
         </button>
         {subOpen && (
-          <div className="absolute left-full top-0 ml-0.5 w-52 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-[60]">
+          <div className="absolute left-full top-0 w-52 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-[60]">
             {item.children.map((sub) => (
               <Link
                 key={sub.label}
                 href={sub.href ?? "#"}
                 onClick={onClose}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50",
+                  sub.href === pathname ? "text-violet-700 bg-violet-50" : "text-gray-700"
+                )}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0" />
                 {sub.label}
@@ -171,16 +201,30 @@ function DropdownItem({ item, onClose }: { item: NavChild; onClose: () => void }
     <Link
       href={item.href ?? "#"}
       onClick={onClose}
-      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+      className={cn(
+        "block px-4 py-2 text-sm hover:bg-gray-50",
+        item.href === pathname ? "text-violet-700 bg-violet-50 font-medium" : "text-gray-700"
+      )}
     >
       {item.label}
     </Link>
   );
 }
 
-function NavDropdownItem({ item }: { item: NavItem }) {
+function NavDropdownItem({ item, pathname }: { item: NavItem; pathname: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const active = hasActiveChild(item.children, pathname);
+
+  function openMenu() {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setOpen(true);
+  }
+
+  function closeMenuSoon() {
+    closeTimer.current = setTimeout(() => setOpen(false), 220);
+  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -191,12 +235,17 @@ function NavDropdownItem({ item }: { item: NavItem }) {
   }, []);
 
   return (
-    <div ref={ref} className="relative">
+    <div
+      ref={ref}
+      className="relative"
+      onMouseEnter={openMenu}
+      onMouseLeave={closeMenuSoon}
+    >
       <button
         onClick={() => setOpen(!open)}
         className={cn(
           "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap",
-          item.isPrimary
+          active
             ? "bg-violet-600 text-white hover:bg-violet-700"
             : "text-gray-700 hover:bg-gray-100"
         )}
@@ -207,9 +256,9 @@ function NavDropdownItem({ item }: { item: NavItem }) {
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 min-w-[190px] bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50">
+        <div className="absolute top-full left-0 min-w-[190px] bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50">
           {item.children?.map((child) => (
-            <DropdownItem key={child.label} item={child} onClose={() => setOpen(false)} />
+            <DropdownItem key={child.label} item={child} pathname={pathname} onClose={() => setOpen(false)} />
           ))}
         </div>
       )}
@@ -220,7 +269,11 @@ function NavDropdownItem({ item }: { item: NavItem }) {
 export default function ProjectModuleLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [search, setSearch] = useState("");
+  const searchResults = search.trim()
+    ? MODULE_LINKS.filter((item) => `${item.group} ${item.label}`.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 8)
+    : [];
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -246,9 +299,9 @@ export default function ProjectModuleLayout({ children }: { children: React.Reac
             </div>
           </Link>
 
-          <div className="flex items-center gap-1 flex-1 overflow-x-auto">
+          <div className="flex items-center gap-1 flex-1 flex-wrap overflow-visible">
             {NAV_ITEMS.map((item) => (
-              <NavDropdownItem key={item.label} item={item} />
+              <NavDropdownItem key={item.label} item={item} pathname={pathname} />
             ))}
           </div>
 
@@ -261,22 +314,34 @@ export default function ProjectModuleLayout({ children }: { children: React.Reac
                 placeholder="Search Modules..."
                 className="pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg w-40 focus:outline-none focus:ring-2 focus:ring-violet-400"
               />
+              {searchResults.length > 0 && (
+                <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-100 rounded-lg shadow-lg py-1 z-50">
+                  {searchResults.map((item) => (
+                    <Link
+                      key={`${item.group}-${item.href}`}
+                      href={item.href}
+                      onClick={() => setSearch("")}
+                      className="block px-3 py-2 hover:bg-violet-50"
+                    >
+                      <span className="block text-[11px] text-gray-400">{item.group}</span>
+                      <span className="block text-sm text-gray-700">{item.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
-            <button className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
+            <Link href="/settings" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" title="Settings">
               <Settings className="w-4 h-4" />
-            </button>
-            <button className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
-              <Sun className="w-4 h-4" />
-            </button>
-            <button className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
+            </Link>
+            <Link href="/" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" title="Dashboard">
               <LayoutGrid className="w-4 h-4" />
-            </button>
-            <button className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
+            </Link>
+            <Link href="/accounts/pending-approvals" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" title="Pending Approvals">
               <Bell className="w-4 h-4" />
-            </button>
-            <button className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
+            </Link>
+            <Link href="/users" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" title="Users">
               <UserCircle className="w-4 h-4" />
-            </button>
+            </Link>
           </div>
         </div>
       </header>

@@ -1,2 +1,3 @@
-import { StubPage } from "@/components/project-module/stub-page";
-export default function Page() { return <StubPage title="Site Management" />; }
+import { SiteManagementPage } from "@/components/project-module/native-pages";
+
+export default SiteManagementPage;

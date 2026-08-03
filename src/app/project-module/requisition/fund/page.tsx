@@ -1,2 +1,1 @@
-import { StubPage } from "@/components/project-module/stub-page";
-export default function Page() { return <StubPage title="Fund Requisition" />; }
+export { default } from "@/app/accounts/vouchers/page";

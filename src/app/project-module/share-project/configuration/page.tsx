@@ -1,2 +1,3 @@
-import { StubPage } from "@/components/project-module/stub-page";
-export default function Page() { return <StubPage title="Project Share Configuration" />; }
+"use client";
+// Re-export the investment configuration page (same functionality)
+export { default } from "@/app/project-module/investment/configuration/page";

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
@@ -15,6 +15,7 @@ interface MainLayoutProps {
 export function MainLayout({ children, title, subtitle }: MainLayoutProps) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -29,6 +30,10 @@ export function MainLayout({ children, title, subtitle }: MainLayoutProps) {
   }
 
   if (!user) return null;
+
+  if (pathname.startsWith("/project-module/")) {
+    return <div className="p-6">{children}</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

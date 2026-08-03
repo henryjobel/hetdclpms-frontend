@@ -1,4 +1,5 @@
 import axios from "axios";
+import { showToast } from "@/lib/feedback";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -16,12 +17,20 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    if (res.config?.method === "delete" && typeof window !== "undefined") {
+      showToast(res.data?.message || "Deleted successfully", "success");
+    }
+    return res;
+  },
   (err) => {
     if (err.response?.status === 401 && typeof window !== "undefined") {
       localStorage.removeItem("het_token");
       localStorage.removeItem("het_user");
       window.location.href = "/login";
+    }
+    if (err.config?.method === "delete" && err.response?.status !== 401 && typeof window !== "undefined") {
+      showToast(err.response?.data?.error || "Delete failed", "error");
     }
     return Promise.reject(err);
   }
@@ -254,6 +263,54 @@ export const realEstateApi = {
   updateSale: (id: string, data: unknown) => api.put(`/api/real-estate/sales/${id}`, data),
   deleteSale: (id: string) => api.delete(`/api/real-estate/sales/${id}`),
   createSaleInstallmentPlan: (id: string, data: unknown) => api.post(`/api/real-estate/sales/${id}/installment-plan`, data),
+};
+
+// ── Investment ────────────────────────────────────────────────────────
+export const investmentApi = {
+  getInvestors: () => api.get("/api/investment/investors"),
+  createInvestor: (data: unknown) => api.post("/api/investment/investors", data),
+  updateInvestor: (id: string, data: unknown) => api.put(`/api/investment/investors/${id}`, data),
+  deleteInvestor: (id: string) => api.delete(`/api/investment/investors/${id}`),
+  getInvestments: () => api.get("/api/investment/investments"),
+  createInvestment: (data: unknown) => api.post("/api/investment/investments", data),
+  updateInvestment: (id: string, data: unknown) => api.put(`/api/investment/investments/${id}`, data),
+  deleteInvestment: (id: string) => api.delete(`/api/investment/investments/${id}`),
+};
+
+// ── Share Project ─────────────────────────────────────────────────────
+export const shareProjectApi = {
+  getAssignments: () => api.get("/api/share-project/assignments"),
+  createAssignment: (data: unknown) => api.post("/api/share-project/assignments", data),
+  updateAssignment: (id: string, data: unknown) => api.put(`/api/share-project/assignments/${id}`, data),
+  deleteAssignment: (id: string) => api.delete(`/api/share-project/assignments/${id}`),
+  getConfigs: () => api.get("/api/share-project/configs"),
+  createConfig: (data: unknown) => api.post("/api/share-project/configs", data),
+  updateConfig: (id: string, data: unknown) => api.put(`/api/share-project/configs/${id}`, data),
+  deleteConfig: (id: string) => api.delete(`/api/share-project/configs/${id}`),
+};
+
+// ── Documents ─────────────────────────────────────────────────────────
+export const documentsApi = {
+  getAll: (projectId?: string) => api.get("/api/documents", { params: projectId ? { projectId } : {} }),
+  create: (data: unknown) => api.post("/api/documents", data),
+  update: (id: string, data: unknown) => api.put(`/api/documents/${id}`, data),
+  delete: (id: string) => api.delete(`/api/documents/${id}`),
+};
+
+// ── Sites ─────────────────────────────────────────────────────────────
+export const sitesApi = {
+  getAll: (projectId?: string) => api.get("/api/sites", { params: projectId ? { projectId } : {} }),
+  create: (data: unknown) => api.post("/api/sites", data),
+  update: (id: string, data: unknown) => api.put(`/api/sites/${id}`, data),
+  delete: (id: string) => api.delete(`/api/sites/${id}`),
+};
+
+// ── Gantt ─────────────────────────────────────────────────────────────
+export const ganttApi = {
+  getAll: (projectId?: string) => api.get("/api/gantt", { params: projectId ? { projectId } : {} }),
+  create: (data: unknown) => api.post("/api/gantt", data),
+  update: (id: string, data: unknown) => api.put(`/api/gantt/${id}`, data),
+  delete: (id: string) => api.delete(`/api/gantt/${id}`),
 };
 
 export const reportsApi = {

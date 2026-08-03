@@ -1,2 +1,3 @@
-import { StubPage } from "@/components/project-module/stub-page";
-export default function Page() { return <StubPage title="Penalty Report" />; }
+import { PenaltyReportPage } from "@/components/project-module/native-pages";
+
+export default PenaltyReportPage;

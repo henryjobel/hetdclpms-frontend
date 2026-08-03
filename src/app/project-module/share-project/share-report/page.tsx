@@ -1,2 +1,3 @@
-import { StubPage } from "@/components/project-module/stub-page";
-export default function Page() { return <StubPage title="Share Report" />; }
+import { ShareReportPage } from "@/components/project-module/native-pages";
+
+export default ShareReportPage;

@@ -1,2 +1,1 @@
-import { StubPage } from "@/components/project-module/stub-page";
-export default function Page() { return <StubPage title="Road" />; }
+export { default } from "@/app/real-estate/blocks-roads/page";

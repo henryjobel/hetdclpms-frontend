@@ -1,2 +1,1 @@
-import { StubPage } from "@/components/project-module/stub-page";
-export default function Page() { return <StubPage title="Service / Work Name" />; }
+export { default } from "@/app/projects/work-orders/page";

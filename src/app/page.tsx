@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { MainLayout } from "@/components/layout/main-layout";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -158,7 +159,7 @@ export default function DashboardPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Active Projects</CardTitle>
-              <a href="/projects" className="text-xs text-amber-600 hover:underline font-medium">View All</a>
+              <Link href="/projects" className="text-xs text-amber-600 hover:underline font-medium">View All</Link>
             </CardHeader>
             <div className="divide-y divide-gray-50">
               {activeProjects.length === 0 && (
@@ -186,7 +187,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Recent Vouchers</CardTitle>
-            <a href="/accounts/vouchers" className="text-xs text-amber-600 hover:underline font-medium">View All</a>
+            <Link href="/accounts/vouchers" className="text-xs text-amber-600 hover:underline font-medium">View All</Link>
           </CardHeader>
           <div className="divide-y divide-gray-50">
             {vouchers.length === 0 && (

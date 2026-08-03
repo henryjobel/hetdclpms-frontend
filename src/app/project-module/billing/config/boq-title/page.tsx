@@ -1,2 +1,1 @@
-import { StubPage } from "@/components/project-module/stub-page";
-export default function Page() { return <StubPage title="BOQ Title" />; }
+export { default } from "@/app/projects/boq/page";
