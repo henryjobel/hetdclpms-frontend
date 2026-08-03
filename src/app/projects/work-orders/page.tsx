@@ -4,6 +4,7 @@ import { MainLayout } from "@/components/layout/main-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { contractorsApi, projectsApi, projectsApi as projectApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Plus, Loader2, X, Pencil, Trash2 } from "lucide-react";
 
@@ -95,7 +96,7 @@ export default function WorkOrdersPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this work order?")) return;
+    if (!(await confirmAction("Delete this work order?"))) return;
     await projectApi.deleteWorkOrder(id);
     fetchAll();
   }

@@ -6,6 +6,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { contractorsApi, operationsApi, projectsApi, workersApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { CheckCircle, DollarSign, Loader2, Pencil, Plus, Receipt, Trash2, X } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -164,7 +165,7 @@ export default function AdvancedBillingPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this billing record?")) return;
+    if (!(await confirmAction("Delete this billing record?"))) return;
     await operationsApi.deleteBilling(id);
     fetchAll();
   }

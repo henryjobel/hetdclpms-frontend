@@ -4,6 +4,7 @@ import { MainLayout } from "@/components/layout/main-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { realEstateApi, projectsApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { formatCurrency } from "@/lib/utils";
 import { Plus, Loader2, X, Pencil, Trash2 } from "lucide-react";
 
@@ -87,7 +88,7 @@ export default function RealEstateUnitsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this unit?")) return;
+    if (!(await confirmAction("Delete this unit?"))) return;
     await realEstateApi.deleteUnit(id);
     fetchAll();
   }

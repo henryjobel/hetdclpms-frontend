@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTable } from "@/components/ui/data-table";
 import { workersApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { Users, DollarSign, Plus, Search, Loader2, X, Pencil, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
@@ -67,7 +68,7 @@ export default function WorkersPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this worker?")) return;
+    if (!(await confirmAction("Delete this worker?"))) return;
     try { await workersApi.delete(id); fetchAll(); } catch { /* silent */ }
   }
 

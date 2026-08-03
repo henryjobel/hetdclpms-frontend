@@ -2,14 +2,16 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { projectsApi } from "@/lib/api";
+import { projectsApi, usersApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
+import { exportRowsToPdf, exportRowsToXlsx, type ExportColumn } from "@/lib/export-utils";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
   Eye, Plus, Pencil, Trash2, X, Loader2,
-  Download, FileSpreadsheet, FileDown,
+  FileSpreadsheet, FileDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,20 +20,27 @@ interface Project {
   id: string; name: string; location: string; type: string; status: string;
   budget: number; startDate: string; endDate: string; manager: string;
   totalUnits: number; soldUnits: number; description?: string;
+  totalIncome?: number; totalExpense?: number; profit?: number;
 }
 interface BOQItem {
-  id: string; projectId: string; itemType: string; description: string;
-  unit: string; quantity: number; rate: number; amount: number;
+  id: string; projectId: string; description: string;
+  unit: string; quantity: number;
+  itemType?: string; phase?: string;
+  rate?: number; unitRate?: number;
+  amount?: number; totalCost?: number; materialCost?: number; laborCost?: number;
 }
 interface Task {
-  id: string; projectId: string; name: string; description?: string;
+  id: string; projectId: string; title: string; name?: string; description?: string;
   assignee?: string; status: string; priority: string;
-  startDate?: string; dueDate?: string;
+  startDate?: string; dueDate?: string; userId?: string; progress?: number;
+  assignedTo?: { id?: string; name: string };
 }
 interface ProgressLog {
-  id: string; projectId: string; date: string;
-  workingProgress: number; financialProgress: number; notes?: string;
+  id: string; projectId: string; date?: string; logDate?: string;
+  workingProgress?: number; financialProgress?: number; percentage?: number;
+  notes?: string; remarks?: string; phase?: string;
 }
+interface User { id: string; name: string }
 interface Quotation {
   id: string; projectId?: string; title?: string; vendor?: string;
   amount?: number; status?: string; date?: string; project?: { name: string };
@@ -82,6 +91,7 @@ export default function ProjectDetailPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [progressLogs, setProgressLogs] = useState<ProgressLog[]>([]);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
   // BOQ form
@@ -92,7 +102,8 @@ export default function ProjectDetailPage() {
   // Task form
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
-  const [taskForm, setTaskForm] = useState({ name: "", description: "", assignee: "", status: "PENDING", priority: "MEDIUM", startDate: "", dueDate: "" });
+  const defaultTaskForm = { title: "", description: "", userId: "", status: "PENDING", priority: "MEDIUM", dueDate: "", progress: "0" };
+  const [taskForm, setTaskForm] = useState(defaultTaskForm);
 
   // Progress form
   const [showProgressForm, setShowProgressForm] = useState(false);
@@ -123,6 +134,7 @@ export default function ProjectDetailPage() {
         projectsApi.getProgress(id),
         projectsApi.getQuotations(),
       ]);
+      const usersRes = await usersApi.getAll().catch(() => null);
       if (pRes.status === "fulfilled") setProject(pRes.value.data.data ?? pRes.value.data);
       if (boqRes.status === "fulfilled") setBoqItems(boqRes.value.data.data ?? boqRes.value.data ?? []);
       if (taskRes.status === "fulfilled") setTasks(taskRes.value.data.data ?? taskRes.value.data ?? []);
@@ -131,6 +143,7 @@ export default function ProjectDetailPage() {
         const all: Quotation[] = quotRes.value.data.data ?? quotRes.value.data ?? [];
         setQuotations(all.filter((q) => q.projectId === id));
       }
+      if (usersRes) setUsers(usersRes.data.data ?? []);
     } finally {
       setLoading(false);
     }
@@ -144,17 +157,29 @@ export default function ProjectDetailPage() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   // ── Derived values ───────────────────────────────────────────────────────
-  const cost = boqItems.reduce((a, b) => a + (b.amount || b.quantity * b.rate || 0), 0);
+  function getBoqType(item: BOQItem) {
+    return item.itemType ?? item.phase ?? "General";
+  }
+
+  function getBoqRate(item: BOQItem) {
+    return Number(item.rate ?? item.unitRate ?? 0);
+  }
+
+  function getBoqAmount(item: BOQItem) {
+    return Number(item.amount ?? item.totalCost ?? (item.quantity * getBoqRate(item)) + Number(item.materialCost ?? 0) + Number(item.laborCost ?? 0));
+  }
+
+  const cost = boqItems.reduce((a, b) => a + getBoqAmount(b), 0);
   const budget = project?.budget ?? 0;
   const available = budget - cost;
-  const salesRevenue = 0;
+  const salesRevenue = project?.totalIncome ?? 0;
   const profitLoss = salesRevenue - cost;
 
   const chartData = progressLogs.length > 0
     ? progressLogs.map((l) => ({
-        date: new Date(l.date).toLocaleDateString("en-BD", { month: "short", day: "numeric" }),
-        working: l.workingProgress,
-        financial: l.financialProgress,
+        date: new Date(l.logDate ?? l.date ?? Date.now()).toLocaleDateString("en-BD", { month: "short", day: "numeric" }),
+        working: Number(l.percentage ?? l.workingProgress ?? 0),
+        financial: Number(l.financialProgress ?? l.percentage ?? 0),
       }))
     : Array.from({ length: 5 }, (_, i) => ({ date: `Week ${i + 1}`, working: 0, financial: 0 }));
 
@@ -164,8 +189,8 @@ export default function ProjectDetailPage() {
     const payload = {
       ...boqForm,
       quantity: parseFloat(boqForm.quantity) || 0,
-      rate: parseFloat(boqForm.rate) || 0,
-      amount: (parseFloat(boqForm.quantity) || 0) * (parseFloat(boqForm.rate) || 0),
+      phase: boqForm.itemType,
+      unitRate: parseFloat(boqForm.rate) || 0,
     };
     try {
       if (editBoqId) await projectsApi.updateBOQ(editBoqId, payload);
@@ -179,12 +204,12 @@ export default function ProjectDetailPage() {
 
   function openEditBoq(item: BOQItem) {
     setEditBoqId(item.id);
-    setBoqForm({ itemType: item.itemType, description: item.description, unit: item.unit, quantity: String(item.quantity), rate: String(item.rate) });
+    setBoqForm({ itemType: getBoqType(item), description: item.description, unit: item.unit, quantity: String(item.quantity), rate: String(getBoqRate(item)) });
     setShowBoqForm(true);
   }
 
   async function handleDeleteBoq(itemId: string) {
-    if (!confirm("Delete this BOQ item?")) return;
+    if (!(await confirmAction("Delete this BOQ item?"))) return;
     await projectsApi.deleteBOQItem(itemId);
     fetchAll();
   }
@@ -192,17 +217,22 @@ export default function ProjectDetailPage() {
   // ── Task handlers ─────────────────────────────────────────────────────────
   async function handleTaskSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!taskForm.userId || !taskForm.dueDate) return;
     const payload = {
-      ...taskForm,
-      startDate: taskForm.startDate ? new Date(taskForm.startDate).toISOString() : undefined,
-      dueDate: taskForm.dueDate ? new Date(taskForm.dueDate).toISOString() : undefined,
+      title: taskForm.title,
+      description: taskForm.description || undefined,
+      userId: taskForm.userId,
+      status: taskForm.status,
+      priority: taskForm.priority,
+      progress: parseInt(taskForm.progress, 10) || 0,
+      dueDate: new Date(taskForm.dueDate).toISOString(),
     };
     try {
       if (editTaskId) await projectsApi.updateTask(id, editTaskId, payload);
       else await projectsApi.createTask(id, payload);
       setShowTaskForm(false);
       setEditTaskId(null);
-      setTaskForm({ name: "", description: "", assignee: "", status: "PENDING", priority: "MEDIUM", startDate: "", dueDate: "" });
+      setTaskForm(defaultTaskForm);
       fetchAll();
     } catch { /* handle silently */ }
   }
@@ -210,16 +240,16 @@ export default function ProjectDetailPage() {
   function openEditTask(task: Task) {
     setEditTaskId(task.id);
     setTaskForm({
-      name: task.name, description: task.description ?? "", assignee: task.assignee ?? "",
+      title: task.title ?? task.name ?? "", description: task.description ?? "", userId: task.userId ?? task.assignedTo?.id ?? "",
       status: task.status, priority: task.priority,
-      startDate: task.startDate ? task.startDate.slice(0, 10) : "",
       dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
+      progress: String(task.progress ?? 0),
     });
     setShowTaskForm(true);
   }
 
   async function handleDeleteTask(taskId: string) {
-    if (!confirm("Delete this task?")) return;
+    if (!(await confirmAction("Delete this task?"))) return;
     await projectsApi.deleteTask(id, taskId);
     fetchAll();
   }
@@ -228,10 +258,10 @@ export default function ProjectDetailPage() {
   async function handleProgressSubmit(e: React.FormEvent) {
     e.preventDefault();
     const payload = {
-      date: new Date(progressForm.date).toISOString(),
-      workingProgress: parseFloat(progressForm.workingProgress) || 0,
-      financialProgress: parseFloat(progressForm.financialProgress) || 0,
-      notes: progressForm.notes,
+      phase: progressForm.notes || "Progress Update",
+      percentage: parseFloat(progressForm.workingProgress) || 0,
+      remarks: progressForm.notes,
+      logDate: new Date(progressForm.date).toISOString(),
     };
     try {
       await projectsApi.createProgress(id, payload);
@@ -251,10 +281,33 @@ export default function ProjectDetailPage() {
 
   // ── BOQ Comparison data ───────────────────────────────────────────────────
   const compFiltered = boqItems
-    .filter((b) => boqCompTitle === "all" || b.itemType === boqCompTitle)
+    .filter((b) => boqCompTitle === "all" || getBoqType(b) === boqCompTitle)
     .filter((b) => b.description.toLowerCase().includes(boqCompSearch.toLowerCase()));
 
   const compSliced = compFiltered.slice(0, boqCompShow);
+  const boqComparisonColumns: ExportColumn<BOQItem>[] = [
+    { header: "Type", value: (row) => getBoqType(row) },
+    { header: "Description", value: (row) => row.description },
+    { header: "Unit", value: (row) => row.unit },
+    { header: "BOQ Qty", value: (row) => row.quantity },
+    { header: "BOQ Amount", value: (row) => getBoqAmount(row) },
+    { header: "Issue Qty", value: () => 0 },
+    { header: "Issue Amount", value: () => 0 },
+    { header: "Qty Diff", value: (row) => row.quantity },
+    { header: "Amount Diff", value: (row) => getBoqAmount(row) },
+    { header: "Status", value: (row) => row.quantity > 0 ? "Under" : "Match" },
+  ];
+
+  function exportBoqComparison(format: "xlsx" | "pdf") {
+    if (!project) return;
+    const filename = `${project.name}-boq-comparison`;
+    const subtitle = `Type: ${boqCompTitle === "all" ? "All" : boqCompTitle} | Items: ${compFiltered.length}`;
+    if (format === "xlsx") {
+      exportRowsToXlsx({ filename, sheetName: "BOQ Comparison", columns: boqComparisonColumns, rows: compFiltered });
+    } else {
+      exportRowsToPdf({ filename, title: `${project.name} - BOQ Comparison`, subtitle, columns: boqComparisonColumns, rows: compFiltered });
+    }
+  }
 
   if (loading) {
     return (
@@ -284,7 +337,7 @@ export default function ProjectDetailPage() {
             <Eye className="w-4 h-4 text-white" />
           </button>
           <Link
-            href={`/project-module/details-summary/${id}/report`}
+            href="/project-module/reports"
             className="text-sm text-blue-600 hover:underline font-medium"
           >
             Overall Report
@@ -365,7 +418,7 @@ export default function ProjectDetailPage() {
               </div>
 
               <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Financial Progress</h3>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Recorded Progress</h3>
                 <ResponsiveContainer width="100%" height={160}>
                   <AreaChart data={chartData}>
                     <defs>
@@ -378,7 +431,7 @@ export default function ProjectDetailPage() {
                     <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} />
                     <Tooltip />
-                    <Area type="monotone" dataKey="financial" stroke="#3b82f6" fill="url(#fg)" name="Financial %" />
+                    <Area type="monotone" dataKey="financial" stroke="#3b82f6" fill="url(#fg)" name="Progress %" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -438,7 +491,7 @@ export default function ProjectDetailPage() {
                     {boqItems.slice(0, 4).map((b) => (
                       <div key={b.id} className="flex items-center justify-between text-xs">
                         <span className="text-gray-600 truncate flex-1">{b.description}</span>
-                        <span className="font-semibold text-gray-800 ml-2">{(b.amount || b.quantity * b.rate).toLocaleString()}</span>
+                        <span className="font-semibold text-gray-800 ml-2">{getBoqAmount(b).toLocaleString()}</span>
                       </div>
                     ))}
                   </div>
@@ -468,7 +521,7 @@ export default function ProjectDetailPage() {
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400" />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Financial Progress (%)</label>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Reference Progress (%)</label>
                       <input type="number" min="0" max="100" value={progressForm.financialProgress} onChange={(e) => setProgressForm({ ...progressForm, financialProgress: e.target.value })}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400" />
                     </div>
@@ -522,13 +575,13 @@ export default function ProjectDetailPage() {
                 )}
                 {boqItems.map((item, i) => (
                   <tr key={item.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                    <td className="px-4 py-2.5 text-xs">{item.itemType}</td>
+                    <td className="px-4 py-2.5 text-xs">{getBoqType(item)}</td>
                     <td className="px-4 py-2.5 text-xs">{item.description}</td>
                     <td className="px-4 py-2.5 text-xs">{item.unit}</td>
                     <td className="px-4 py-2.5 text-xs text-right">{item.quantity.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-xs text-right">{item.rate.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-xs text-right">{getBoqRate(item).toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-xs text-right font-semibold">
-                      {(item.amount || item.quantity * item.rate).toLocaleString()}
+                      {getBoqAmount(item).toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center justify-center gap-1">
@@ -548,7 +601,7 @@ export default function ProjectDetailPage() {
                   <tr className="bg-gray-100 font-semibold">
                     <td colSpan={5} className="px-4 py-2.5 text-xs">TOTAL</td>
                     <td className="px-4 py-2.5 text-xs text-right">
-                      {boqItems.reduce((a, b) => a + (b.amount || b.quantity * b.rate), 0).toLocaleString()}
+                      {boqItems.reduce((a, b) => a + getBoqAmount(b), 0).toLocaleString()}
                     </td>
                     <td />
                   </tr>
@@ -625,7 +678,7 @@ export default function ProjectDetailPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-700">Tasks</h2>
             <button
-              onClick={() => { setEditTaskId(null); setTaskForm({ name: "", description: "", assignee: "", status: "PENDING", priority: "MEDIUM", startDate: "", dueDate: "" }); setShowTaskForm(true); }}
+              onClick={() => { setEditTaskId(null); setTaskForm(defaultTaskForm); setShowTaskForm(true); }}
               className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700"
             >
               <Plus className="w-4 h-4" /> Add Task
@@ -652,8 +705,8 @@ export default function ProjectDetailPage() {
                 {tasks.map((task, i) => (
                   <tr key={task.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                     <td className="px-4 py-2.5 text-xs text-gray-400">{i + 1}</td>
-                    <td className="px-4 py-2.5 text-xs font-medium text-gray-800">{task.name}</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-600">{task.assignee || "—"}</td>
+                    <td className="px-4 py-2.5 text-xs font-medium text-gray-800">{task.title ?? task.name}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-600">{task.assignedTo?.name ?? task.assignee ?? "—"}</td>
                     <td className="px-4 py-2.5 text-xs">
                       <span className={cn("px-2 py-0.5 rounded text-[10px] font-semibold",
                         task.priority === "HIGH" ? "bg-red-100 text-red-700" :
@@ -698,13 +751,16 @@ export default function ProjectDetailPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="col-span-2">
                       <label className="block text-xs font-medium text-gray-700 mb-1">Task Name *</label>
-                      <input required value={taskForm.name} onChange={(e) => setTaskForm({ ...taskForm, name: e.target.value })}
+                      <input required value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400" />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Assignee</label>
-                      <input value={taskForm.assignee} onChange={(e) => setTaskForm({ ...taskForm, assignee: e.target.value })}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Assignee *</label>
+                      <select required value={taskForm.userId} onChange={(e) => setTaskForm({ ...taskForm, userId: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400">
+                        <option value="">Select assignee</option>
+                        {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Priority</label>
@@ -713,6 +769,7 @@ export default function ProjectDetailPage() {
                         <option value="LOW">Low</option>
                         <option value="MEDIUM">Medium</option>
                         <option value="HIGH">High</option>
+                        <option value="URGENT">Urgent</option>
                       </select>
                     </div>
                     <div>
@@ -725,13 +782,13 @@ export default function ProjectDetailPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Start Date</label>
-                      <input type="date" value={taskForm.startDate} onChange={(e) => setTaskForm({ ...taskForm, startDate: e.target.value })}
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Progress (%)</label>
+                      <input type="number" min="0" max="100" value={taskForm.progress} onChange={(e) => setTaskForm({ ...taskForm, progress: e.target.value })}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400" />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Due Date</label>
-                      <input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })}
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Due Date *</label>
+                      <input type="date" required value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400" />
                     </div>
                     <div className="col-span-2">
@@ -762,7 +819,7 @@ export default function ProjectDetailPage() {
             <div className="flex items-center gap-3 py-3">
               <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center">
                 <span className="text-violet-700 font-bold text-sm">
-                  {project.manager.charAt(0).toUpperCase()}
+                  {(project.manager || "P").charAt(0).toUpperCase()}
                 </span>
               </div>
               <div>
@@ -868,7 +925,7 @@ export default function ProjectDetailPage() {
               <label className="block text-xs text-gray-500 mb-1">Task</label>
               <select className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400">
                 <option>Select Task</option>
-                {tasks.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {tasks.map((t) => <option key={t.id} value={t.id}>{t.title ?? t.name}</option>)}
               </select>
             </div>
           </div>
@@ -876,10 +933,10 @@ export default function ProjectDetailPage() {
           {/* Table controls */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700">
+              <button onClick={() => exportBoqComparison("xlsx")} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700">
                 <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
               </button>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600">
+              <button onClick={() => exportBoqComparison("pdf")} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600">
                 <FileDown className="w-3.5 h-3.5" /> PDF
               </button>
               <span className="text-xs text-gray-500 ml-2">Show</span>
@@ -911,7 +968,7 @@ export default function ProjectDetailPage() {
                 )}
                 {compSliced.map((item, i) => {
                   const boqQty = item.quantity;
-                  const boqAmt = item.amount || item.quantity * item.rate;
+                  const boqAmt = getBoqAmount(item);
                   const issueQty = 0;
                   const issueAmt = 0;
                   const qtyDiff = boqQty - issueQty;
@@ -920,7 +977,7 @@ export default function ProjectDetailPage() {
 
                   return (
                     <tr key={item.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                      <td className="px-3 py-2.5">{item.itemType}</td>
+                      <td className="px-3 py-2.5">{getBoqType(item)}</td>
                       <td className="px-3 py-2.5">{item.description}</td>
                       <td className="px-3 py-2.5 text-right">{boqQty.toLocaleString()}</td>
                       <td className="px-3 py-2.5 text-right">{boqAmt.toLocaleString()}</td>
@@ -943,11 +1000,11 @@ export default function ProjectDetailPage() {
                   <tr className="bg-gray-100 font-semibold">
                     <td colSpan={2} className="px-3 py-2.5">TOTAL:</td>
                     <td className="px-3 py-2.5 text-right">{compFiltered.reduce((a, b) => a + b.quantity, 0).toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-right">{compFiltered.reduce((a, b) => a + (b.amount || b.quantity * b.rate), 0).toLocaleString()}</td>
+                    <td className="px-3 py-2.5 text-right">{compFiltered.reduce((a, b) => a + getBoqAmount(b), 0).toLocaleString()}</td>
                     <td className="px-3 py-2.5 text-right">0</td>
                     <td className="px-3 py-2.5 text-right">0</td>
                     <td className="px-3 py-2.5 text-right">{compFiltered.reduce((a, b) => a + b.quantity, 0).toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-right">{compFiltered.reduce((a, b) => a + (b.amount || b.quantity * b.rate), 0).toLocaleString()}</td>
+                    <td className="px-3 py-2.5 text-right">{compFiltered.reduce((a, b) => a + getBoqAmount(b), 0).toLocaleString()}</td>
                     <td />
                   </tr>
                 </tfoot>

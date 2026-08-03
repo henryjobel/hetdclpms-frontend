@@ -8,6 +8,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/utils";
 import { PROJECT_STATUS_LABELS } from "@/lib/constants";
 import { projectsApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { Building2, TrendingUp, DollarSign, CheckCircle, Plus, Search, Loader2, X, Pencil, Trash2, Eye } from "lucide-react";
 import Link from "next/link";
 
@@ -119,7 +120,7 @@ export default function ProjectsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this project?")) return;
+    if (!(await confirmAction("Delete this project and all related records?"))) return;
     try {
       await projectsApi.delete(id);
       fetchProjects();

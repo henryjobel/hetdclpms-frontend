@@ -6,6 +6,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { operationsApi, projectsApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { Boxes, Landmark, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -107,7 +108,7 @@ export default function AssetsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this asset?")) return;
+    if (!(await confirmAction("Delete this asset?"))) return;
     await operationsApi.deleteAsset(id);
     fetchAll();
   }

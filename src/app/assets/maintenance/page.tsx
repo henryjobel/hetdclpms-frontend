@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { StatCard } from "@/components/ui/stat-card";
 import { operationsApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { Loader2, Pencil, Plus, Settings, Trash2, X } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -122,7 +123,7 @@ export default function AssetMaintenancePage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this maintenance log?")) return;
+    if (!(await confirmAction("Delete this maintenance log?"))) return;
     await operationsApi.deleteAssetMaintenance(id);
     fetchAll();
   }

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTable } from "@/components/ui/data-table";
 import { inventoryApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { Package, AlertTriangle, DollarSign, Plus, Search, Loader2, X, Pencil, Trash2 } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 
@@ -101,7 +102,7 @@ export default function InventoryPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this product?")) return;
+    if (!(await confirmAction("Delete this product?"))) return;
     try {
       await inventoryApi.deleteProduct(id);
       fetchAll();

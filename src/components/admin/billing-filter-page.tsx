@@ -11,7 +11,15 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 interface BillingFilterPageProps {
   title: string;
   subtitle: string;
-  mode: "period" | "adjustment" | "labor-worker-bills" | "vendor-bills" | "contractor-work-orders" | "quotes";
+  mode:
+    | "bill-invoice"
+    | "period"
+    | "adjustment"
+    | "contractor-bills"
+    | "labor-worker-bills"
+    | "vendor-bills"
+    | "contractor-work-orders"
+    | "quotes";
 }
 
 export function BillingFilterPage({ title, subtitle, mode }: BillingFilterPageProps) {
@@ -21,16 +29,17 @@ export function BillingFilterPage({ title, subtitle, mode }: BillingFilterPagePr
   useEffect(() => {
     async function fetchRows() {
       try {
-        if (mode === "period" || mode === "adjustment" || mode === "labor-worker-bills") {
+        if (mode === "period" || mode === "adjustment" || mode === "contractor-bills" || mode === "labor-worker-bills") {
           const response = await operationsApi.getBilling();
           const data = response.data.data || [];
           const typeMap = {
+            "contractor-bills": "CONTRACTOR",
             period: "PERCENTAGE",
             adjustment: "ADJUSTMENT",
             "labor-worker-bills": "LABOR",
           };
           setRows(data.filter((row: { billingType: string }) => row.billingType === typeMap[mode]));
-        } else if (mode === "vendor-bills") {
+        } else if (mode === "bill-invoice" || mode === "vendor-bills") {
           const response = await billsApi.getAll();
           setRows(response.data.data || []);
         } else if (mode === "contractor-work-orders") {

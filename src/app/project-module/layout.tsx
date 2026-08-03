@@ -5,8 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import {
   ChevronDown, ChevronRight, Search, Settings, Bell,
-  LayoutGrid, Folder, Share2, ClipboardList, Receipt,
-  Landmark, FileText, Phone, TrendingUp,
+  LayoutGrid, Folder, ClipboardList, Receipt,
+  Landmark, Phone, TrendingUp,
   Loader2, UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,13 +24,13 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   {
-    label: "Project",
+    label: "Project Setup",
     icon: Folder,
     children: [
       { label: "Project Type", href: "/project-module/project-type" },
       { label: "Project List", href: "/project-module" },
       { label: "Site", href: "/project-module/site" },
-      { label: "Reports", href: "/project-module/reports" },
+      { label: "Documents", href: "/project-module/documents" },
     ],
   },
   {
@@ -39,30 +39,23 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: "Customer Accounts", href: "/project-module/contact/customer-accounts" },
       { label: "Supplier Accounts", href: "/project-module/contact/supplier-accounts" },
-      { label: "Labour/Worker/Contractor", href: "/project-module/contact/labour" },
+      { label: "Labour / Worker", href: "/project-module/contact/labour" },
+      { label: "Contractor", href: "/project-module/contact/contractors" },
     ],
   },
   {
-    label: "Investment",
-    icon: TrendingUp,
+    label: "Construction Ops",
+    icon: ClipboardList,
     children: [
-      { label: "Investor", href: "/project-module/investment/investor" },
-      { label: "Configuration", href: "/project-module/investment/configuration" },
+      { label: "BOQ", href: "/project-module/billing/boq" },
+      { label: "Work Order", href: "/project-module/billing/work-order" },
+      { label: "Contractor Work Order", href: "/project-module/billing/contractor-work-order" },
+      { label: "Quote", href: "/project-module/billing/quote" },
+      { label: "Project Reports", href: "/project-module/reports" },
     ],
   },
   {
-    label: "Share Project",
-    icon: Share2,
-    children: [
-      { label: "Assign Share", href: "/project-module/share-project/assign-share" },
-      { label: "Share Report", href: "/project-module/share-project/share-report" },
-      { label: "Penalty Report", href: "/project-module/share-project/penalty-report" },
-      { label: "ShareHolder Point Report", href: "/project-module/share-project/shareholder-point-report" },
-      { label: "Project Share Configuration", href: "/project-module/share-project/configuration" },
-    ],
-  },
-  {
-    label: "Requisition",
+    label: "Procurement",
     icon: ClipboardList,
     children: [
       { label: "Material Requisition", href: "/project-module/requisition/material" },
@@ -72,35 +65,32 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
-    label: "Billing",
+    label: "Billing & Finance",
     icon: Receipt,
     children: [
+      { label: "Bill/Invoice", href: "/project-module/billing/bill-invoice" },
+      { label: "Contractor Bill", href: "/project-module/billing/contractor-bill" },
+      { label: "Labour/Worker Bill", href: "/project-module/billing/labour-worker-bill" },
+      { label: "Period Billing", href: "/project-module/billing/period" },
+      { label: "Adjustment Billing", href: "/project-module/billing/adjustment" },
       {
         label: "Configuration",
         children: [
           { label: "Category", href: "/project-module/billing/config/category" },
           { label: "Bill Item", href: "/project-module/billing/config/bill-item" },
-          { label: "Service/Work Name", href: "/project-module/billing/config/service-work-name" },
           { label: "BOQ Title", href: "/project-module/billing/config/boq-title" },
+          { label: "Service/Work Name", href: "/project-module/billing/config/service-work-name" },
         ],
       },
-      { label: "Bill/Invoice", href: "/project-module/billing/bill-invoice" },
-      { label: "Contractor Bill", href: "/project-module/billing/contractor-bill" },
-      { label: "Labour/Worker Bill", href: "/project-module/billing/labour-worker-bill" },
-      { label: "Work Order", href: "/project-module/billing/work-order" },
-      { label: "Contractor Work Order", href: "/project-module/billing/contractor-work-order" },
-      { label: "Period Billing", href: "/project-module/billing/period" },
-      { label: "Adjustment Billing", href: "/project-module/billing/adjustment" },
-      { label: "Quote", href: "/project-module/billing/quote" },
     ],
   },
   {
-    label: "Flat/Land",
+    label: "Real Estate",
     icon: Landmark,
     children: [
-      { label: "Flat", href: "/project-module/flat-land/flat" },
+      { label: "Flat / Unit", href: "/project-module/flat-land/flat" },
       {
-        label: "Land",
+        label: "Land Setup",
         children: [
           { label: "Road", href: "/project-module/flat-land/road" },
           { label: "Block", href: "/project-module/flat-land/block" },
@@ -117,10 +107,16 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
-    label: "Document",
-    icon: FileText,
+    label: "Investment & Share",
+    icon: TrendingUp,
     children: [
-      { label: "Project Documentation List", href: "/project-module/documents" },
+      { label: "Investor", href: "/project-module/investment/investor" },
+      { label: "Investment Configuration", href: "/project-module/investment/configuration" },
+      { label: "Assign Share", href: "/project-module/share-project/assign-share" },
+      { label: "Share Report", href: "/project-module/share-project/share-report" },
+      { label: "Penalty Report", href: "/project-module/share-project/penalty-report" },
+      { label: "ShareHolder Point Report", href: "/project-module/share-project/shareholder-point-report" },
+      { label: "Project Share Configuration", href: "/project-module/share-project/configuration" },
     ],
   },
 ];

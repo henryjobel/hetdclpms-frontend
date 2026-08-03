@@ -4,6 +4,7 @@ import { MainLayout } from "@/components/layout/main-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { projectsApi, realEstateApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { Plus, Loader2, X, Trash2, Pencil } from "lucide-react";
 
 interface Project { id: string; name: string }
@@ -93,7 +94,7 @@ export default function BlocksRoadsPage() {
                   { key: "id", header: "Actions", render: (v, row) => (
                     <div className="flex gap-1">
                       <button onClick={() => openEditBlock(row as unknown as BlockRow)} className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => realEstateApi.deleteBlock(v as string).then(fetchAll)} className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                      <button onClick={async () => { if (await confirmAction("Delete this block?")) realEstateApi.deleteBlock(v as string).then(fetchAll); }} className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   )},
                 ]} />
@@ -116,7 +117,7 @@ export default function BlocksRoadsPage() {
                   { key: "id", header: "Actions", render: (v, row) => (
                     <div className="flex gap-1">
                       <button onClick={() => openEditRoad(row as unknown as RoadRow)} className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => realEstateApi.deleteRoad(v as string).then(fetchAll)} className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                      <button onClick={async () => { if (await confirmAction("Delete this road?")) realEstateApi.deleteRoad(v as string).then(fetchAll); }} className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   )},
                 ]} />

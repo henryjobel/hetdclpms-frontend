@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTable } from "@/components/ui/data-table";
 import { accountsApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { Layers, Plus, Search, Loader2, X, Pencil, Trash2 } from "lucide-react";
 
 interface Account {
@@ -95,7 +96,7 @@ export default function ChartOfAccountsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this account?")) return;
+    if (!(await confirmAction("Delete this account?"))) return;
     try {
       await accountsApi.deleteAccount(id);
       fetchAll();

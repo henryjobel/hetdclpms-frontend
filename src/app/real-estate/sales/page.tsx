@@ -4,6 +4,7 @@ import { MainLayout } from "@/components/layout/main-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { realEstateApi } from "@/lib/api";
+import { confirmAction, showToast } from "@/lib/feedback";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/utils";
 import { Plus, Loader2, X, Trash2, Pencil, CalendarPlus } from "lucide-react";
 
@@ -116,18 +117,18 @@ export default function RealEstateSalesPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this sale?")) return;
+    if (!(await confirmAction("Delete this sale?"))) return;
     await realEstateApi.deleteSale(id);
     fetchAll();
   }
 
   async function handleInstallmentPlan(sale: Sale) {
     if (sale.dueAmount <= 0) {
-      alert("This sale has no due amount.");
+      showToast("This sale has no due amount.", "error");
       return;
     }
     await realEstateApi.createSaleInstallmentPlan(sale.id, { months: 6 });
-    alert("Installment plan created in Accounts > Installments");
+    showToast("Installment plan created in Accounts > Installments", "success");
   }
 
   const totalSales = sales.reduce((sum, item) => sum + item.saleAmount, 0);

@@ -6,6 +6,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { accountsApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { CreditCard, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -110,7 +111,7 @@ export default function ChequesPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this cheque entry?")) return;
+    if (!(await confirmAction("Delete this cheque entry?"))) return;
     await accountsApi.deleteCheque(id);
     fetchAll();
   }

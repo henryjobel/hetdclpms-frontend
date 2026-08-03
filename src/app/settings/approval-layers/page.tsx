@@ -6,6 +6,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { operationsApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { CheckCircle, Layers, Loader2, Pencil, Plus, Shield, Trash2, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
@@ -86,7 +87,7 @@ export default function ApprovalLayersPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this approval layer?")) return;
+    if (!(await confirmAction("Delete this approval layer?"))) return;
     await operationsApi.deleteApprovalLayer(id);
     fetchAll();
   }

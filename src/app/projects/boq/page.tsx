@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/main-layout";
 import { projectsApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { FileText, Plus, Loader2, X, Pencil, Trash2 } from "lucide-react";
 
 interface Project { id: string; name: string; }
@@ -110,7 +111,7 @@ export default function BOQPage() {
   }
 
   async function handleDelete(itemId: string) {
-    if (!confirm("Delete this BOQ item?")) return;
+    if (!(await confirmAction("Delete this BOQ item?"))) return;
     await projectsApi.deleteBOQItem(itemId);
     const r = await projectsApi.getBOQ(selectedId);
     setItems(r.data.data ?? r.data ?? []);

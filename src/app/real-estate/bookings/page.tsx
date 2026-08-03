@@ -4,6 +4,7 @@ import { MainLayout } from "@/components/layout/main-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { projectsApi, realEstateApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Plus, Loader2, X, Trash2, Pencil, Ban } from "lucide-react";
 
@@ -92,13 +93,13 @@ export default function RealEstateBookingsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this booking?")) return;
+    if (!(await confirmAction("Delete this booking?"))) return;
     await realEstateApi.deleteBooking(id);
     fetchAll();
   }
 
   async function handleCancelBooking(booking: Booking) {
-    if (!confirm("Cancel this booking and release the unit?")) return;
+    if (!(await confirmAction("Cancel this booking and release the unit?", "Confirm Cancel"))) return;
     await realEstateApi.cancelBooking(booking.id, {
       refundAmount: booking.bookingAmount || 0,
       remarks: "Cancelled from booking screen",

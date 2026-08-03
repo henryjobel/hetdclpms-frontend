@@ -5,6 +5,8 @@ import Link from "next/link";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useAuth } from "@/contexts/auth-context";
 import { projectsApi, usersApi } from "@/lib/api";
+import { confirmAction } from "@/lib/feedback";
+import { exportRowsToPdf, exportRowsToXlsx, type ExportColumn } from "@/lib/export-utils";
 import {
   AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip,
   ResponsiveContainer, BarChart, Bar,
@@ -223,7 +225,7 @@ export default function ProjectDetailPage() {
     setShowBoqForm(true);
   }
   async function deleteBoq(itemId: string) {
-    if (!confirm("Delete this BOQ item?")) return;
+    if (!(await confirmAction("Delete this BOQ item?"))) return;
     await projectsApi.deleteBOQItem(itemId); fetchProject();
   }
 
@@ -252,7 +254,7 @@ export default function ProjectDetailPage() {
     setShowTaskForm(true);
   }
   async function deleteTask(taskId: string) {
-    if (!confirm("Delete this task?")) return;
+    if (!(await confirmAction("Delete this task?"))) return;
     await projectsApi.deleteTask(id, taskId); fetchProject();
   }
 
@@ -270,7 +272,7 @@ export default function ProjectDetailPage() {
     } catch { /* handle silently */ }
   }
   async function deleteProgress(logId: string) {
-    if (!confirm("Delete this log?")) return;
+    if (!(await confirmAction("Delete this log?"))) return;
     await projectsApi.deleteProgress(id, logId); fetchProject();
   }
 
@@ -287,6 +289,35 @@ export default function ProjectDetailPage() {
     (compPhase === "all" || b.phase === compPhase) &&
     b.description.toLowerCase().includes(compSearch.toLowerCase())
   );
+  const boqComparisonColumns: ExportColumn<BOQItem>[] = [
+    { header: "Phase", value: (row) => row.phase || "-" },
+    { header: "Description", value: (row) => row.description },
+    { header: "Unit", value: (row) => row.unit },
+    { header: "BOQ Qty", value: (row) => row.quantity },
+    { header: "Unit Rate", value: (row) => row.unitRate },
+    { header: "BOQ Cost", value: (row) => row.quantity * row.unitRate },
+    { header: "Material Cost", value: (row) => row.materialCost },
+    { header: "Labour Cost", value: (row) => row.laborCost },
+    { header: "Total Cost", value: (row) => row.totalCost },
+    {
+      header: "Status",
+      value: (row) => {
+        const diff = row.totalCost - row.quantity * row.unitRate;
+        return Math.abs(diff) < 0.01 ? "Match" : diff > 0 ? "Over Budget" : "Under Budget";
+      },
+    },
+  ];
+
+  function exportBoqComparison(format: "xlsx" | "pdf") {
+    if (!project) return;
+    const filename = `${project.name}-boq-comparison`;
+    const subtitle = `Phase: ${compPhase === "all" ? "All" : compPhase} | Items: ${compFiltered.length}`;
+    if (format === "xlsx") {
+      exportRowsToXlsx({ filename, sheetName: "BOQ Comparison", columns: boqComparisonColumns, rows: compFiltered });
+    } else {
+      exportRowsToPdf({ filename, title: `${project.name} - BOQ Comparison`, subtitle, columns: boqComparisonColumns, rows: compFiltered });
+    }
+  }
 
   // Loading / not-found
   if (loading) return (
@@ -735,10 +766,10 @@ export default function ProjectDetailPage() {
 
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700">
+              <button onClick={() => exportBoqComparison("xlsx")} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700">
                 <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
               </button>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600">
+              <button onClick={() => exportBoqComparison("pdf")} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600">
                 <FileDown className="w-3.5 h-3.5" /> PDF
               </button>
               <span className="text-xs text-gray-500 ml-1">Show</span>
