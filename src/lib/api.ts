@@ -313,6 +313,18 @@ export const ganttApi = {
   delete: (id: string) => api.delete(`/api/gantt/${id}`),
 };
 
+export const designApi = {
+  getConsultants: () => api.get("/api/design/consultants"),
+  createConsultant: (data: unknown) => api.post("/api/design/consultants", data),
+  updateConsultant: (id: string, data: unknown) => api.put(`/api/design/consultants/${id}`, data),
+  deleteConsultant: (id: string) => api.delete(`/api/design/consultants/${id}`),
+  uploadDocument: (data: FormData) => api.post("/api/design/upload", data, { headers: { "Content-Type": "multipart/form-data" } }),
+  getRecords: (params?: Record<string, string>) => api.get("/api/design/records", { params }),
+  createRecord: (data: unknown) => api.post("/api/design/records", data),
+  updateRecord: (id: string, data: unknown) => api.put(`/api/design/records/${id}`, data),
+  deleteRecord: (id: string) => api.delete(`/api/design/records/${id}`),
+};
+
 export const reportsApi = {
   exportCsv: (type: string) => api.get(`/api/reports/export/${type}`, { responseType: "blob" }),
   getOperational: () => api.get("/api/reports/operational"),

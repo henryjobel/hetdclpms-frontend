@@ -38,7 +38,7 @@ export function MainLayout({ children, title, subtitle }: MainLayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="ml-64 flex flex-col min-h-screen">
+      <div className="ml-80 flex flex-col min-h-screen">
         <Header title={title} subtitle={subtitle} />
         <main className="flex-1 p-6">{children}</main>
       </div>

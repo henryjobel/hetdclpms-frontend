@@ -33,8 +33,9 @@ import {
   History,
   Settings2,
   Clock,
+  DraftingCompass,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { APP_NAME } from "@/lib/constants";
 
 interface NavItem {
@@ -52,18 +53,103 @@ const navItems: NavItem[] = [
     icon: Building2,
     children: [
       { label: "All Projects", href: "/projects", icon: Building2 },
-      { label: "Project Schedule", href: "/projects/schedule", icon: ClipboardList },
-      { label: "BOQ", href: "/projects/boq", icon: FileText },
-      { label: "Budget", href: "/projects/budget", icon: Wallet },
-      { label: "Tasks", href: "/projects/tasks", icon: ClipboardList },
-      { label: "Progress Monitor", href: "/projects/progress", icon: TrendingUp },
-      { label: "Contractors", href: "/projects/contractors", icon: HardHat },
-      { label: "Workers", href: "/projects/workers", icon: UserCheck },
-      { label: "Requisition", href: "/projects/requisition", icon: ClipboardList },
-      { label: "Bills", href: "/projects/bills", icon: Receipt },
-      { label: "Quotations", href: "/projects/quotations", icon: FileText },
-      { label: "Work Orders", href: "/projects/work-orders", icon: FileText },
-      { label: "Advanced Billing", href: "/projects/advanced-billing", icon: Receipt },
+      {
+        label: "Land / Owner",
+        icon: Landmark,
+        children: [
+          { label: "Land Owner Info", href: "/projects/land-owner", icon: Users },
+          { label: "Deed / Mutation / Approval", href: "/projects/documents", icon: FileText },
+          { label: "Developer Agreement", href: "/projects/developer-agreement", icon: ClipboardList },
+          { label: "Owner vs Developer Share", href: "/projects/share-ratio", icon: TrendingUp },
+        ],
+      },
+      {
+        label: "Design / Architect",
+        icon: DraftingCompass,
+        children: [
+          { label: "Architect / Consultant Profile", href: "/projects/design/consultants", icon: Users },
+          { label: "Design Contract / Fee", href: "/projects/design/contract-fee", icon: Receipt },
+          { label: "Drawing Submission", href: "/projects/design/drawing-submission", icon: FileText },
+          { label: "Drawing Approval Status", href: "/projects/design/approval-status", icon: ClipboardList },
+          { label: "Structural / MEP / Soil Test", href: "/projects/design/structural-mep-soil", icon: HardHat },
+          { label: "Approval Document Upload", href: "/projects/design/approval-documents", icon: FileText },
+          { label: "Design Payment Tracking", href: "/projects/design/payments", icon: Banknote },
+        ],
+      },
+      {
+        label: "Project Team",
+        icon: Users,
+        children: [
+          { label: "Project Manager", href: "/projects/project-manager", icon: UserCheck },
+          { label: "Site Engineer", href: "/projects/site-engineer", icon: HardHat },
+          { label: "Supervisor", href: "/projects/supervisor", icon: UserCheck },
+          { label: "Safety Officer", href: "/projects/safety-officer", icon: Shield },
+          { label: "Store Keeper", href: "/projects/store-keeper", icon: Package },
+          { label: "Accounts Person", href: "/projects/accounts-person", icon: Wallet },
+        ],
+      },
+      {
+        label: "Contractor / Labour",
+        icon: HardHat,
+        children: [
+          { label: "Main Contractor", href: "/projects/main-contractor", icon: HardHat },
+          { label: "Subcontractor", href: "/projects/subcontractor", icon: Briefcase },
+          { label: "Mason / Helper / Rod Binder", href: "/projects/mason-helper-rod-binder", icon: UserCheck },
+          { label: "Electrician / Plumber / Painter", href: "/projects/electrician-plumber-painter", icon: UserCheck },
+          { label: "Attendance / Wage / Payment", href: "/projects/attendance-wage-payment", icon: Clock },
+        ],
+      },
+      {
+        label: "Procurement / Inventory",
+        icon: Package,
+        children: [
+          { label: "Material Requisition", href: "/projects/procurement/material-requisition", icon: ClipboardList },
+          { label: "Supplier Quotation", href: "/projects/procurement/supplier-quotation", icon: FileText },
+          { label: "Purchase Order", href: "/projects/procurement/purchase-order", icon: ShoppingCart },
+          { label: "GRN", href: "/projects/procurement/grn", icon: Truck },
+          { label: "Stock Adjustment", href: "/projects/procurement/stock-adjustment", icon: AlertTriangle },
+          { label: "Purchase Bill / Invoice", href: "/projects/procurement/purchase-bill", icon: Receipt },
+        ],
+      },
+      {
+        label: "Project Execution",
+        icon: ClipboardList,
+        children: [
+          { label: "BOQ", href: "/projects/boq", icon: FileText },
+          { label: "Budget", href: "/projects/budget", icon: Wallet },
+          { label: "Work Order", href: "/projects/work-orders", icon: FileText },
+          { label: "Schedule / Gantt", href: "/projects/schedule", icon: ClipboardList },
+          { label: "Task Management", href: "/projects/tasks", icon: ClipboardList },
+          { label: "Progress Log", href: "/projects/progress", icon: TrendingUp },
+          { label: "Site Report", href: "/projects/site-report", icon: BarChart3 },
+        ],
+      },
+      {
+        label: "Accounts",
+        icon: Wallet,
+        children: [
+          { label: "Voucher", href: "/projects/accounts/voucher", icon: FileText },
+          { label: "Project-wise Income", href: "/projects/accounts/project-income", icon: TrendingUp },
+          { label: "Project Expense", href: "/projects/accounts/project-expense", icon: TrendingUp },
+          { label: "Payable / Receivable", href: "/projects/accounts/payable-receivable", icon: CreditCard },
+          { label: "Contractor Bill", href: "/projects/contractor-bill", icon: Receipt },
+          { label: "Labour Bill", href: "/projects/labour-bill", icon: Receipt },
+          { label: "Profit / Loss", href: "/projects/accounts/profit-loss", icon: TrendingUp },
+          { label: "Cash Flow", href: "/projects/accounts/cash-flow", icon: Banknote },
+        ],
+      },
+      {
+        label: "Real Estate",
+        icon: Home,
+        children: [
+          { label: "Flat / Land / Unit Setup", href: "/projects/real-estate/units", icon: Landmark },
+          { label: "Booking", href: "/projects/real-estate/bookings", icon: ClipboardList },
+          { label: "Sale", href: "/projects/real-estate/sales", icon: DollarSign },
+          { label: "Installment", href: "/projects/real-estate/installments", icon: Receipt },
+          { label: "Collection Report", href: "/projects/real-estate/collection-report", icon: Banknote },
+          { label: "Aging / Due Report", href: "/projects/real-estate/aging-report", icon: AlertTriangle },
+        ],
+      },
     ],
   },
   {
@@ -200,28 +286,41 @@ interface SidebarItemProps {
   level?: number;
 }
 
+function hasActiveRoute(item: NavItem, pathname: string): boolean {
+  if (item.href) {
+    if (item.href === pathname) return true;
+    if (!["/", "/projects", "/project-module"].includes(item.href) && pathname.startsWith(`${item.href}/`)) return true;
+  }
+  return Boolean(item.children?.some((child) => hasActiveRoute(child, pathname)));
+}
+
 function SidebarItem({ item, level = 0 }: SidebarItemProps) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(() => {
-    if (!item.children) return false;
-    return item.children.some((child) => child.href === pathname || pathname.startsWith(child.href ?? "___"));
-  });
+  const activeBranch = hasActiveRoute(item, pathname);
+  const [open, setOpen] = useState(() => activeBranch);
+  const indentStyle = level > 0 ? { paddingLeft: `${12 + level * 14}px` } : undefined;
 
-  const isActive = item.href === pathname;
+  useEffect(() => {
+    if (activeBranch) setOpen(true);
+  }, [activeBranch]);
+
+  const isActive = item.href === pathname || Boolean(item.href && !["/", "/projects", "/project-module"].includes(item.href) && pathname.startsWith(`${item.href}/`));
 
   if (item.children) {
     return (
       <div>
         <button
           onClick={() => setOpen(!open)}
+          style={indentStyle}
           className={cn(
-            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-            "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-            level > 0 && "pl-9"
+            "w-full min-w-0 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
+            activeBranch
+              ? "bg-amber-50 text-amber-800 shadow-sm ring-1 ring-amber-100 hover:bg-amber-50 hover:text-amber-800"
+              : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
           )}
         >
-          <item.icon className="w-4 h-4 flex-shrink-0" />
-          <span className="flex-1 text-left">{item.label}</span>
+          <item.icon className={cn("w-4 h-4 flex-shrink-0", activeBranch && "text-amber-600")} />
+          <span className="min-w-0 flex-1 truncate text-left" title={item.label}>{item.label}</span>
           {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
         </button>
         {open && (
@@ -238,24 +337,26 @@ function SidebarItem({ item, level = 0 }: SidebarItemProps) {
   return (
     <Link
       href={item.href ?? "#"}
+      aria-current={isActive ? "page" : undefined}
+      style={indentStyle}
       className={cn(
-        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+        "group flex min-w-0 items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all",
         level === 0
           ? "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
           : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-        isActive && "bg-amber-50 text-amber-700 hover:bg-amber-50 hover:text-amber-700"
+        isActive && "bg-amber-500 text-white shadow-sm hover:bg-amber-500 hover:text-white"
       )}
     >
-      <item.icon className={cn("w-4 h-4 flex-shrink-0", isActive && "text-amber-600")} />
-      <span>{item.label}</span>
-      {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-500" />}
+      <item.icon className={cn("w-4 h-4 flex-shrink-0", isActive && "text-white")} />
+      <span className="min-w-0 flex-1 truncate" title={item.label}>{item.label}</span>
+      {isActive && <span className="ml-auto h-5 w-1 rounded-full bg-white/80" />}
     </Link>
   );
 }
 
 export function Sidebar() {
   return (
-    <aside className="fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200 flex flex-col z-30">
+    <aside className="fixed inset-y-0 left-0 w-80 bg-white border-r border-gray-200 flex flex-col z-30">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-200">
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center flex-shrink-0">
@@ -268,7 +369,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-1">
         {navItems.map((item) => (
           <SidebarItem key={item.href ?? item.label} item={item} />
         ))}

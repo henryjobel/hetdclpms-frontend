@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import {
   ChevronDown, ChevronRight, Search, Settings, Bell,
   LayoutGrid, Folder, ClipboardList, Receipt,
-  Landmark, Phone, TrendingUp,
+  Landmark, Phone, TrendingUp, DraftingCompass,
   Loader2, UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,30 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Project List", href: "/project-module" },
       { label: "Site", href: "/project-module/site" },
       { label: "Documents", href: "/project-module/documents" },
+    ],
+  },
+  {
+    label: "Land / Owner",
+    icon: Landmark,
+    children: [
+      { label: "Land Owner Info", href: "/project-module/flat-land/land-list" },
+      { label: "Deed / Mutation / Approval", href: "/project-module/documents" },
+      { label: "Developer Agreement", href: "/project-module/documents" },
+      { label: "Owner vs Developer Share", href: "/project-module/share-project/assign-share" },
+    ],
+  },
+  {
+    label: "Design & Approval",
+    icon: DraftingCompass,
+    children: [
+      { label: "Architects & Consultants", href: "/project-module/design/consultants" },
+      { label: "Design Contract / Fee", href: "/project-module/design/contract-fee" },
+      { label: "Drawing Submission", href: "/project-module/design/drawing-submission" },
+      { label: "Drawing Approval Status", href: "/project-module/design/approval-status" },
+      { label: "Structural / MEP / Soil Test", href: "/project-module/design/structural-mep-soil" },
+      { label: "Approval Document Upload", href: "/project-module/design/approval-documents" },
+      { label: "Design Payment Tracking", href: "/project-module/design/payments" },
+      { label: "All Design Records", href: "/project-module/design/records" },
     ],
   },
   {
