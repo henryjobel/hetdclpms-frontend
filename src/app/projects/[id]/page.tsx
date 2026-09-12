@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useAuth } from "@/contexts/auth-context";
-import { projectsApi, usersApi } from "@/lib/api";
+import { projectsApi, usersApi, accountsApi } from "@/lib/api";
 import { confirmAction } from "@/lib/feedback";
 import { exportRowsToPdf, exportRowsToXlsx, type ExportColumn } from "@/lib/export-utils";
 import {
@@ -14,8 +14,9 @@ import {
 import {
   Plus, Pencil, Trash2, X, Loader2,
   FileSpreadsheet, FileDown, ArrowLeft,
+  DollarSign, Receipt, CheckCircle, Clock,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 
 // ─────────────────────── Types (matching Prisma schema exactly) ───────────────
 interface ProjectDetail {
@@ -29,6 +30,17 @@ interface ProjectDetail {
   progressLogs: ProgressLog[];
   contractorAssigns: { contractor: { id: string; name: string; specialty: string } }[];
   workerAssigns: { worker: { id: string; name: string; role: string } }[];
+  vouchers?: VoucherItem[];
+}
+interface VoucherItem {
+  id: string;
+  voucherNo: string;
+  type: string;
+  amount: number;
+  description?: string;
+  status: string;
+  voucherDate: string;
+  createdBy?: { name: string };
 }
 interface BOQItem {
   id: string; projectId: string; description: string; unit: string;
@@ -85,7 +97,7 @@ const PRIORITY_MAP: Record<string, string> = {
   HIGH: "bg-red-100 text-red-700",
 };
 
-const TABS = ["Dashboard", "BOQ", "Task", "Users", "Details", "Flat/Land", "BOQ Comparison", "Quotation"];
+const TABS = ["Dashboard", "BOQ", "Task", "Expenses", "Users", "Details", "Flat/Land", "BOQ Comparison", "Quotation"];
 
 // ─────────────────────── Input helpers ───────────────────────────────────────
 function Inp(props: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
@@ -134,6 +146,22 @@ export default function ProjectDetailPage() {
   const emptyProg = { phase: "", percentage: "", remarks: "", logDate: new Date().toISOString().slice(0, 10) };
   const [showProgForm, setShowProgForm] = useState(false);
   const [progForm, setProgForm] = useState(emptyProg);
+
+  // Expense / Voucher form
+  const emptyExpense = {
+    type: "PAYMENT",
+    category: "Material",
+    amount: "",
+    payee: "",
+    description: "",
+    voucherDate: new Date().toISOString().slice(0, 10),
+  };
+  const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [expenseForm, setExpenseForm] = useState(emptyExpense);
+  const [savingExpense, setSavingExpense] = useState(false);
+  const [expenseError, setExpenseError] = useState("");
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState("all");
+  const [expenseSearch, setExpenseSearch] = useState("");
 
   // Project details (land/building info) — localStorage
   const blank = { areaOfLand: "", nameOfLandOwner: "", landOwnerDeveloperRatio: "", valueOfLand: "", buildArea: "", totalNoOfBuilding: "", totalFloorOfBuilding: "", noOfFlatInEachFloor: "", totalFlatInBuilding: "", flatSize: "", totalNoOfCarParking: "" };
@@ -276,6 +304,93 @@ export default function ProjectDetailPage() {
     await projectsApi.deleteProgress(id, logId); fetchProject();
   }
 
+  // ── Expense handlers ──────────────────────────────────────────────────────
+  async function submitExpense(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingExpense(true);
+    setExpenseError("");
+    try {
+      const amt = parseFloat(expenseForm.amount) || 0;
+      if (amt <= 0) {
+        setExpenseError("Please enter a valid expense amount");
+        setSavingExpense(false);
+        return;
+      }
+      const fullDesc = `[${expenseForm.category}] ${expenseForm.payee ? `Payee: ${expenseForm.payee} — ` : ""}${expenseForm.description || ""}`.trim();
+      await accountsApi.createVoucher({
+        type: expenseForm.type,
+        projectId: id,
+        amount: amt,
+        description: fullDesc,
+        entries: [],
+      });
+      setShowExpenseForm(false);
+      setExpenseForm(emptyExpense);
+      fetchProject();
+    } catch (err: unknown) {
+      setExpenseError(
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        "Failed to create expense voucher"
+      );
+    } finally {
+      setSavingExpense(false);
+    }
+  }
+
+  async function approveExpense(voucherId: string) {
+    try {
+      await accountsApi.approveVoucher(voucherId);
+      fetchProject();
+    } catch (err: unknown) {
+      alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to approve voucher");
+    }
+  }
+
+  async function deleteExpense(voucherId: string) {
+    if (!(await confirmAction("Delete this expense voucher?"))) return;
+    try {
+      await accountsApi.deleteVoucher(voucherId);
+      fetchProject();
+    } catch { /* noop */ }
+  }
+
+  const projectVouchers = project?.vouchers ?? [];
+  const approvedVouchers = projectVouchers.filter((v) => v.status === "approved");
+  const pendingVouchers = projectVouchers.filter((v) => v.status === "pending");
+  const approvedExpenseSum = approvedVouchers.reduce((a, v) => a + v.amount, 0);
+  const pendingExpenseSum = pendingVouchers.reduce((a, v) => a + v.amount, 0);
+
+  const filteredExpenses = projectVouchers.filter((v) => {
+    const matchSearch =
+      (v.voucherNo || "").toLowerCase().includes(expenseSearch.toLowerCase()) ||
+      (v.description || "").toLowerCase().includes(expenseSearch.toLowerCase()) ||
+      (v.createdBy?.name || "").toLowerCase().includes(expenseSearch.toLowerCase());
+    const matchCategory =
+      expenseCategoryFilter === "all" ||
+      (v.description || "").toLowerCase().includes(`[${expenseCategoryFilter.toLowerCase()}]`);
+    return matchSearch && matchCategory;
+  });
+
+  const expenseExportColumns: ExportColumn<VoucherItem>[] = [
+    { header: "Voucher No", value: (r) => r.voucherNo },
+    { header: "Date", value: (r) => formatDate(r.voucherDate) },
+    { header: "Type", value: (r) => r.type },
+    { header: "Description", value: (r) => r.description || "—" },
+    { header: "Amount (৳)", value: (r) => r.amount },
+    { header: "Status", value: (r) => r.status },
+  ];
+
+  function exportExpenses(format: "xlsx" | "pdf") {
+    if (!project) return;
+    const filename = `${project.name}-expenses`;
+    const subtitle = `Total Project Expenses: ৳${formatCurrency(totalExpense)}`;
+    if (format === "xlsx") {
+      exportRowsToXlsx({ filename, sheetName: "Expenses", columns: expenseExportColumns, rows: filteredExpenses });
+    } else {
+      exportRowsToPdf({ filename, title: `${project.name} - Expenses`, subtitle, columns: expenseExportColumns, rows: filteredExpenses });
+    }
+  }
+
   // ── Details save ──────────────────────────────────────────────────────────
   function saveDetails(e: React.FormEvent) {
     e.preventDefault();
@@ -365,17 +480,47 @@ export default function ProjectDetailPage() {
       {/* ══ DASHBOARD ══════════════════════════════════════════════════════════ */}
       {tab === "Dashboard" && (
         <div className="space-y-5">
+          {/* Quick Action bar for Expenses */}
+          <div className="flex items-center justify-between bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border border-amber-200 rounded-xl p-3 px-4 shadow-sm">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center">
+                <Receipt className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-gray-800 block">Project Expense Quick Entry</span>
+                <span className="text-[11px] text-gray-500">Record designer fees, labour wages, materials & site expenses directly for {project.name}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setExpenseForm(emptyExpense); setShowExpenseForm(true); }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg shadow transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" /> + Add Expense
+              </button>
+              <button
+                onClick={() => setTab("Expenses")}
+                className="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-lg shadow-sm"
+              >
+                Expenses Tab ({projectVouchers.length}) →
+              </button>
+            </div>
+          </div>
+
           {/* Metric cards */}
           <div className="grid grid-cols-5 gap-4">
             {[
-              { label: "Budget", value: budget, cls: "bg-gray-50 border-gray-200 text-gray-700" },
-              { label: "Cost / Expense", value: totalExpense, cls: "bg-purple-50 border-purple-200 text-purple-700" },
-              { label: "Available", value: available, cls: available >= 0 ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700" },
-              { label: "Sales / Revenue", value: totalIncome, cls: "bg-teal-50 border-teal-200 text-teal-700" },
-              { label: "Profit / Loss", value: profit, cls: profit >= 0 ? "bg-green-50 border-green-200 text-green-700" : "bg-orange-50 border-orange-200 text-orange-700" },
+              { label: "Budget", value: budget, cls: "bg-gray-50 border-gray-200 text-gray-700", onClick: undefined },
+              { label: "Cost / Expense", value: totalExpense, cls: "bg-purple-50 border-purple-200 text-purple-700 cursor-pointer hover:border-purple-400 transition-all", onClick: () => setTab("Expenses") },
+              { label: "Available", value: available, cls: available >= 0 ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700", onClick: undefined },
+              { label: "Sales / Revenue", value: totalIncome, cls: "bg-teal-50 border-teal-200 text-teal-700", onClick: undefined },
+              { label: "Profit / Loss", value: profit, cls: profit >= 0 ? "bg-green-50 border-green-200 text-green-700" : "bg-orange-50 border-orange-200 text-orange-700", onClick: undefined },
             ].map((m) => (
-              <div key={m.label} className={`border rounded-xl p-4 ${m.cls}`}>
-                <p className="text-xs opacity-60 font-medium">{m.label}</p>
+              <div key={m.label} onClick={m.onClick} className={`border rounded-xl p-4 ${m.cls}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs opacity-60 font-medium">{m.label}</p>
+                  {m.onClick && <span className="text-[10px] text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded font-bold">View</span>}
+                </div>
                 <p className="text-xl font-bold mt-1">{m.value.toLocaleString()}</p>
               </div>
             ))}
@@ -639,6 +784,185 @@ export default function ProjectDetailPage() {
                   </tr>
                 ))}
               </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ══ EXPENSES ══════════════════════════════════════════════════════════ */}
+      {tab === "Expenses" && (
+        <div className="space-y-4">
+          {/* Summary Stat Cards */}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-purple-700">Total Project Expense</p>
+                <DollarSign className="w-4 h-4 text-purple-600" />
+              </div>
+              <p className="text-xl font-bold text-purple-900 mt-1">৳{formatCurrency(totalExpense)}</p>
+              <p className="text-[11px] text-purple-600 mt-0.5">{budget ? Math.round((totalExpense / budget) * 100) : 0}% of total budget</p>
+            </div>
+
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-green-700">Approved Expenses</p>
+                <CheckCircle className="w-4 h-4 text-green-600" />
+              </div>
+              <p className="text-xl font-bold text-green-900 mt-1">৳{formatCurrency(approvedExpenseSum)}</p>
+              <p className="text-[11px] text-green-600 mt-0.5">{approvedVouchers.length} vouchers posted</p>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-amber-700">Pending Approval</p>
+                <Clock className="w-4 h-4 text-amber-600" />
+              </div>
+              <p className="text-xl font-bold text-amber-900 mt-1">৳{formatCurrency(pendingExpenseSum)}</p>
+              <p className="text-[11px] text-amber-600 mt-0.5">{pendingVouchers.length} vouchers pending</p>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-700">Remaining Budget</p>
+                <Receipt className="w-4 h-4 text-gray-600" />
+              </div>
+              <p className={cn("text-xl font-bold mt-1", available >= 0 ? "text-green-700" : "text-red-600")}>
+                ৳{formatCurrency(available)}
+              </p>
+              <p className="text-[11px] text-gray-500 mt-0.5">Budget: ৳{formatCurrency(budget)}</p>
+            </div>
+          </div>
+
+          {/* Action and Filter Bar */}
+          <div className="flex items-center justify-between flex-wrap gap-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+              <input
+                value={expenseSearch}
+                onChange={(e) => setExpenseSearch(e.target.value)}
+                placeholder="Search by voucher no, description, payee, created by..."
+                className="w-full max-w-sm px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+              <select
+                value={expenseCategoryFilter}
+                onChange={(e) => setExpenseCategoryFilter(e.target.value)}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+              >
+                <option value="all">All Categories</option>
+                <option value="Material">Material (কাঁচামাল)</option>
+                <option value="Labour">Labour / Worker (মজুরি)</option>
+                <option value="Designer">Designer / Architect Fee</option>
+                <option value="Contractor">Contractor (কন্ট্রাক্টর বিল)</option>
+                <option value="Utilities">Utilities & Fuel</option>
+                <option value="Site Logistics">Site Office & Logistics</option>
+                <option value="Other">Other / অন্যান্য</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => exportExpenses("xlsx")}
+                className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg shadow-sm"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+              </button>
+              <button
+                onClick={() => exportExpenses("pdf")}
+                className="flex items-center gap-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg shadow-sm"
+              >
+                <FileDown className="w-3.5 h-3.5" /> PDF
+              </button>
+              <button
+                onClick={() => { setExpenseForm(emptyExpense); setShowExpenseForm(true); }}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg shadow-sm"
+              >
+                <Plus className="w-4 h-4" /> + Add Expense / Voucher
+              </button>
+            </div>
+          </div>
+
+          {/* Expenses Table */}
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-amber-500 text-white">
+                  <th className="px-4 py-3 text-left font-semibold">#</th>
+                  <th className="px-4 py-3 text-left font-semibold">VOUCHER NO</th>
+                  <th className="px-4 py-3 text-left font-semibold">DATE</th>
+                  <th className="px-4 py-3 text-left font-semibold">TYPE</th>
+                  <th className="px-4 py-3 text-left font-semibold">CATEGORY & DESCRIPTION</th>
+                  <th className="px-4 py-3 text-left font-semibold">CREATED BY</th>
+                  <th className="px-4 py-3 text-right font-semibold">AMOUNT (৳)</th>
+                  <th className="px-4 py-3 text-center font-semibold">STATUS</th>
+                  <th className="px-4 py-3 text-center font-semibold">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredExpenses.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="text-center py-12 text-gray-400">
+                      No expense vouchers recorded for this project yet. Click &quot;+ Add Expense / Voucher&quot; to record your first expense.
+                    </td>
+                  </tr>
+                )}
+                {filteredExpenses.map((v, i) => (
+                  <tr key={v.id} className="hover:bg-amber-50/50 transition-colors">
+                    <td className="px-4 py-2.5 text-gray-400">{i + 1}</td>
+                    <td className="px-4 py-2.5 font-mono font-semibold text-gray-800">{v.voucherNo}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{formatDate(v.voucherDate)}</td>
+                    <td className="px-4 py-2.5">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                        {v.type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 font-medium text-gray-800 max-w-xs truncate" title={v.description}>
+                      {v.description || "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500">{v.createdBy?.name || "System"}</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-gray-900">
+                      ৳{formatCurrency(v.amount)}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-full text-[10px] font-bold",
+                        v.status === "approved" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+                      )}>
+                        {v.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        {v.status === "pending" && (
+                          <button
+                            onClick={() => approveExpense(v.id)}
+                            className="flex items-center gap-1 text-[11px] px-2 py-0.5 bg-green-50 text-green-700 rounded hover:bg-green-100 font-semibold"
+                            title="Approve Voucher"
+                          >
+                            <CheckCircle className="w-3 h-3" /> Approve
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteExpense(v.id)}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded"
+                          title="Delete Voucher"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {filteredExpenses.length > 0 && (
+                <tfoot>
+                  <tr className="bg-amber-50 font-bold border-t border-amber-200 text-gray-800">
+                    <td colSpan={6} className="px-4 py-3 text-right">TOTAL EXPENSE:</td>
+                    <td className="px-4 py-3 text-right text-purple-900 font-extrabold text-sm">
+                      ৳{formatCurrency(filteredExpenses.reduce((a, b) => a + b.amount, 0))}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
@@ -986,6 +1310,122 @@ export default function ProjectDetailPage() {
               <div className="flex justify-end gap-3 pt-1">
                 <button type="button" onClick={() => setShowProgForm(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
                 <button type="submit" className="px-5 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Expense Form Modal */}
+      {showExpenseForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-amber-500/10 rounded-t-2xl">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-amber-600" /> Add Project Expense
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Project: <span className="font-semibold text-gray-800">{project.name}</span></p>
+              </div>
+              <button onClick={() => { setShowExpenseForm(false); setExpenseError(""); }}>
+                <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+              </button>
+            </div>
+            <form onSubmit={submitExpense} className="p-6 space-y-4">
+              {expenseError && (
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                  {expenseError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Expense Category *</label>
+                  <select
+                    value={expenseForm.category}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  >
+                    <option value="Material">🧱 Material / Construction কাঁচামাল</option>
+                    <option value="Labour">👷 Labour / Worker মজুরি</option>
+                    <option value="Designer">📐 Designer / Architect Fee</option>
+                    <option value="Contractor">🏗️ Contractor বিল</option>
+                    <option value="Utilities">⛽ Utilities & Fuel</option>
+                    <option value="Site Logistics">🏢 Site Office & Logistics</option>
+                    <option value="Other">📌 Other / অন্যান্য</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Voucher Type *</label>
+                  <select
+                    value={expenseForm.type}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, type: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  >
+                    <option value="PAYMENT">Payment Voucher</option>
+                    <option value="JOURNAL">Journal Voucher</option>
+                    <option value="ADJUSTMENT">Adjustment Voucher</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Inp
+                    label="Amount (৳) *"
+                    type="number"
+                    min="1"
+                    required
+                    placeholder="e.g. 50000"
+                    value={expenseForm.amount}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <Inp
+                    label="Date *"
+                    type="date"
+                    required
+                    value={expenseForm.voucherDate}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, voucherDate: e.target.value })}
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <Inp
+                    label="Payee / Paid To (Name of Worker / Designer / Vendor)"
+                    placeholder="e.g. Architect Kamal / Rod Supplier Meghna / Head Mason"
+                    value={expenseForm.payee}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, payee: e.target.value })}
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Description / Remarks</label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. 500 bags cement delivery bill paid via cheque"
+                    value={expenseForm.description}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => { setShowExpenseForm(false); setExpenseError(""); }}
+                  className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingExpense}
+                  className="px-5 py-2 text-sm bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white rounded-lg font-bold flex items-center gap-2 shadow-sm"
+                >
+                  {savingExpense && <Loader2 className="w-4 h-4 animate-spin" />} Save Project Expense
+                </button>
               </div>
             </form>
           </div>
