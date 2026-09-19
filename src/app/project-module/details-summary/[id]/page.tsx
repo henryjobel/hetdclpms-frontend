@@ -166,7 +166,12 @@ export default function ProjectDetailPage() {
   }
 
   function getBoqAmount(item: BOQItem) {
-    return Number(item.amount ?? item.totalCost ?? (item.quantity * getBoqRate(item)) + Number(item.materialCost ?? 0) + Number(item.laborCost ?? 0));
+    if (item.amount !== undefined && item.amount !== null) return Number(item.amount);
+    if (item.totalCost !== undefined && item.totalCost !== null && Number(item.totalCost) > 0) return Number(item.totalCost);
+    const mat = Number(item.materialCost || 0);
+    const lab = Number(item.laborCost || 0);
+    if (mat + lab > 0) return mat + lab;
+    return item.quantity * getBoqRate(item);
   }
 
   const cost = boqItems.reduce((a, b) => a + getBoqAmount(b), 0);

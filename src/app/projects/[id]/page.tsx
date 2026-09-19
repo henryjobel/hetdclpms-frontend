@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { MainLayout } from "@/components/layout/main-layout";
@@ -15,8 +15,10 @@ import {
   Plus, Pencil, Trash2, X, Loader2,
   FileSpreadsheet, FileDown, ArrowLeft,
   DollarSign, Receipt, CheckCircle, Clock,
+  FolderTree, Layers, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { PROJECT_PHASES, getSubcategoriesForPhase, normalizePhaseName } from "@/lib/constants";
 
 // ─────────────────────── Types (matching Prisma schema exactly) ───────────────
 interface ProjectDetail {
@@ -46,6 +48,7 @@ interface BOQItem {
   id: string; projectId: string; description: string; unit: string;
   quantity: number; unitRate: number; materialCost: number;
   laborCost: number; totalCost: number; phase?: string;
+  subcategory?: string;
 }
 interface Task {
   id: string; projectId: string; title: string; description?: string;
@@ -131,7 +134,7 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
 
   // BOQ form
-  const emptyBoq = { phase: "", description: "", unit: "", quantity: "", unitRate: "", materialCost: "0", laborCost: "0" };
+  const emptyBoq = { phase: "", subcategory: "", description: "", unit: "", quantity: "", unitRate: "", materialCost: "0", laborCost: "0" };
   const [showBoqForm, setShowBoqForm] = useState(false);
   const [editBoqId, setEditBoqId] = useState<string | null>(null);
   const [boqForm, setBoqForm] = useState(emptyBoq);
@@ -170,8 +173,10 @@ export default function ProjectDetailPage() {
 
   // BOQ comparison filters
   const [compPhase, setCompPhase] = useState("all");
+  const [compSubcategory, setCompSubcategory] = useState("all");
   const [compSearch, setCompSearch] = useState("");
   const [compShow, setCompShow] = useState(10);
+  const [expandedPhases, setExpandedPhases] = useState<Record<string, boolean>>({});
 
   const fetchProject = useCallback(async () => {
     setLoading(true);
@@ -230,6 +235,7 @@ export default function ProjectDetailPage() {
     const rate = parseFloat(boqForm.unitRate) || 0;
     const mat = parseFloat(boqForm.materialCost) || 0;
     const lab = parseFloat(boqForm.laborCost) || 0;
+    const totalCost = (mat + lab > 0) ? (mat + lab) : (qty * rate);
     const payload = {
       description: boqForm.description,
       unit: boqForm.unit,
@@ -237,8 +243,9 @@ export default function ProjectDetailPage() {
       unitRate: rate,
       materialCost: mat,
       laborCost: lab,
-      totalCost: qty * rate + mat + lab,
+      totalCost,
       phase: boqForm.phase || undefined,
+      subcategory: boqForm.subcategory || undefined,
     };
     try {
       if (editBoqId) await projectsApi.updateBOQ(editBoqId, payload);
@@ -249,7 +256,16 @@ export default function ProjectDetailPage() {
   }
   function openEditBoq(b: BOQItem) {
     setEditBoqId(b.id);
-    setBoqForm({ phase: b.phase ?? "", description: b.description, unit: b.unit, quantity: String(b.quantity), unitRate: String(b.unitRate), materialCost: String(b.materialCost), laborCost: String(b.laborCost) });
+    setBoqForm({
+      phase: b.phase ?? "",
+      subcategory: b.subcategory ?? "",
+      description: b.description,
+      unit: b.unit,
+      quantity: String(b.quantity),
+      unitRate: String(b.unitRate),
+      materialCost: String(b.materialCost),
+      laborCost: String(b.laborCost),
+    });
     setShowBoqForm(true);
   }
   async function deleteBoq(itemId: string) {
@@ -398,39 +414,135 @@ export default function ProjectDetailPage() {
     setDetailsSaved(true); setTimeout(() => setDetailsSaved(false), 2500);
   }
 
-  // ── BOQ comparison ────────────────────────────────────────────────────────
-  const uniquePhases = [...new Set(boqItems.map((b) => b.phase).filter(Boolean))];
-  const compFiltered = boqItems.filter((b) =>
-    (compPhase === "all" || b.phase === compPhase) &&
-    b.description.toLowerCase().includes(compSearch.toLowerCase())
-  );
+  // ── BOQ comparison & hierarchy ───────────────────────────────────────────
+  const uniquePhases = useMemo(() => {
+    const fromItems = boqItems.map((b) => b.phase).filter(Boolean) as string[];
+    return Array.from(new Set([...PROJECT_PHASES, ...fromItems]));
+  }, [boqItems]);
+
+  const availableCompSubcategories = useMemo(() => {
+    if (compPhase === "all") {
+      const allSubs = boqItems.map((b) => b.subcategory).filter(Boolean) as string[];
+      return Array.from(new Set(allSubs));
+    }
+    return getSubcategoriesForPhase(compPhase);
+  }, [compPhase, boqItems]);
+
+  const compFiltered = useMemo(() => {
+    return boqItems.filter((b) => {
+      const normItemPhase = normalizePhaseName(b.phase);
+      const normFilterPhase = compPhase === "all" ? "all" : normalizePhaseName(compPhase);
+      const matchPhase = compPhase === "all" || normItemPhase === normFilterPhase || b.phase === compPhase;
+      const matchSub = compSubcategory === "all" || b.subcategory === compSubcategory;
+      const matchSearch =
+        (b.description || "").toLowerCase().includes(compSearch.toLowerCase()) ||
+        (b.phase || "").toLowerCase().includes(compSearch.toLowerCase()) ||
+        (b.subcategory || "").toLowerCase().includes(compSearch.toLowerCase()) ||
+        (b.unit || "").toLowerCase().includes(compSearch.toLowerCase());
+      return matchPhase && matchSub && matchSearch;
+    });
+  }, [boqItems, compPhase, compSubcategory, compSearch]);
+
+  const compTotalBudget = compFiltered.reduce((a, b) => a + (b.quantity * b.unitRate), 0);
+  const compTotalMaterial = compFiltered.reduce((a, b) => a + (b.materialCost || 0), 0);
+  const compTotalLabour = compFiltered.reduce((a, b) => a + (b.laborCost || 0), 0);
+  const compTotalActual = compFiltered.reduce((a, b) => a + (b.totalCost || 0), 0);
+  const compVariance = compTotalBudget - compTotalActual;
+  const compVariancePct = compTotalBudget > 0 ? ((compVariance / compTotalBudget) * 100).toFixed(1) : "0";
+
+  // Transparent Hierarchy: Phase -> Subcategory -> Total Cost
+  const phaseHierarchy = useMemo(() => {
+    const map = new Map<string, {
+      phase: string;
+      totalBudget: number;
+      totalCost: number;
+      subcategories: Map<string, {
+        subcategory: string;
+        budget: number;
+        cost: number;
+        items: BOQItem[];
+      }>;
+    }>();
+
+    compFiltered.forEach((item) => {
+      const pName = item.phase ? normalizePhaseName(item.phase) : "General / Other";
+      const sName = item.subcategory || "General Items";
+      const budget = item.quantity * item.unitRate;
+      const cost = item.totalCost;
+
+      if (!map.has(pName)) {
+        map.set(pName, {
+          phase: pName,
+          totalBudget: 0,
+          totalCost: 0,
+          subcategories: new Map(),
+        });
+      }
+
+      const pObj = map.get(pName)!;
+      pObj.totalBudget += budget;
+      pObj.totalCost += cost;
+
+      if (!pObj.subcategories.has(sName)) {
+        pObj.subcategories.set(sName, {
+          subcategory: sName,
+          budget: 0,
+          cost: 0,
+          items: [],
+        });
+      }
+
+      const sObj = pObj.subcategories.get(sName)!;
+      sObj.budget += budget;
+      sObj.cost += cost;
+      sObj.items.push(item);
+    });
+
+    return Array.from(map.values()).map((p) => ({
+      ...p,
+      subcategories: Array.from(p.subcategories.values()),
+    }));
+  }, [compFiltered]);
+
+  function togglePhase(phaseName: string) {
+    setExpandedPhases((prev) => ({
+      ...prev,
+      [phaseName]: prev[phaseName] === false ? true : false,
+    }));
+  }
+
   const boqComparisonColumns: ExportColumn<BOQItem>[] = [
-    { header: "Phase", value: (row) => row.phase || "-" },
-    { header: "Description", value: (row) => row.description },
-    { header: "Unit", value: (row) => row.unit },
-    { header: "BOQ Qty", value: (row) => row.quantity },
-    { header: "Unit Rate", value: (row) => row.unitRate },
-    { header: "BOQ Cost", value: (row) => row.quantity * row.unitRate },
-    { header: "Material Cost", value: (row) => row.materialCost },
-    { header: "Labour Cost", value: (row) => row.laborCost },
-    { header: "Total Cost", value: (row) => row.totalCost },
+    { header: "Phase / Stage", value: (row) => row.phase || "General" },
+    { header: "Subcategory", value: (row) => row.subcategory || "General" },
+    { header: "Item & Specification", value: (row) => row.description },
+    { header: "Unit", value: (row) => row.unit || "-" },
+    { header: "Est. Qty", value: (row) => row.quantity },
+    { header: "Unit Rate (৳)", value: (row) => row.unitRate },
+    { header: "Est. Budget (৳)", value: (row) => row.quantity * row.unitRate },
+    { header: "Material Cost (৳)", value: (row) => row.materialCost },
+    { header: "Labour Cost (৳)", value: (row) => row.laborCost },
+    { header: "Total Cost (৳)", value: (row) => row.totalCost },
+    { header: "Variance (৳)", value: (row) => (row.quantity * row.unitRate) - row.totalCost },
     {
       header: "Status",
       value: (row) => {
-        const diff = row.totalCost - row.quantity * row.unitRate;
-        return Math.abs(diff) < 0.01 ? "Match" : diff > 0 ? "Over Budget" : "Under Budget";
+        const est = row.quantity * row.unitRate;
+        const diff = est - row.totalCost;
+        if (Math.abs(diff) < 0.01) return "Matched (100%)";
+        if (diff > 0) return `Saved (+৳${diff.toLocaleString()})`;
+        return `Over Budget (-৳${Math.abs(diff).toLocaleString()})`;
       },
     },
   ];
 
   function exportBoqComparison(format: "xlsx" | "pdf") {
     if (!project) return;
-    const filename = `${project.name}-boq-comparison`;
-    const subtitle = `Phase: ${compPhase === "all" ? "All" : compPhase} | Items: ${compFiltered.length}`;
+    const filename = `${project.name}-boq-budget-vs-cost-comparison`;
+    const subtitle = `Phase: ${compPhase === "all" ? "All Phases" : compPhase} | Total Est. Budget: ৳${formatCurrency(compTotalBudget)} | Total Cost: ৳${formatCurrency(compTotalActual)}`;
     if (format === "xlsx") {
       exportRowsToXlsx({ filename, sheetName: "BOQ Comparison", columns: boqComparisonColumns, rows: compFiltered });
     } else {
-      exportRowsToPdf({ filename, title: `${project.name} - BOQ Comparison`, subtitle, columns: boqComparisonColumns, rows: compFiltered });
+      exportRowsToPdf({ filename, title: `${project.name} - BOQ Budget vs Cost Comparison`, subtitle, columns: boqComparisonColumns, rows: compFiltered });
     }
   }
 
@@ -667,58 +779,201 @@ export default function ProjectDetailPage() {
 
       {/* ══ BOQ ════════════════════════════════════════════════════════════════ */}
       {tab === "BOQ" && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-sm font-semibold text-gray-700">Bill of Quantities</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Total: <span className="font-bold text-amber-600">{boqItems.reduce((a, b) => a + b.totalCost, 0).toLocaleString()}</span></p>
+        <div className="space-y-4">
+          {/* Top KPI Cards for BOQ */}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-blue-700">Estimated BOQ Budget</p>
+                <DollarSign className="w-4 h-4 text-blue-600" />
+              </div>
+              <p className="text-xl font-bold text-blue-950 mt-1">৳{formatCurrency(compTotalBudget)}</p>
+              <p className="text-[11px] text-blue-600 mt-0.5">{boqItems.length} items estimated</p>
             </div>
-            <button onClick={() => { setEditBoqId(null); setBoqForm(emptyBoq); setShowBoqForm(true); }}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm rounded-lg font-medium">
-              <Plus className="w-4 h-4" /> Add Item
-            </button>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-amber-700">Material Cost (কাঁচামাল)</p>
+                <Receipt className="w-4 h-4 text-amber-600" />
+              </div>
+              <p className="text-xl font-bold text-amber-950 mt-1">৳{formatCurrency(compTotalMaterial)}</p>
+              <p className="text-[11px] text-amber-600 mt-0.5">
+                {compTotalActual > 0 ? Math.round((compTotalMaterial / compTotalActual) * 100) : 0}% of actual cost
+              </p>
+            </div>
+
+            <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-teal-700">Labour Cost (মজুরি)</p>
+                <Receipt className="w-4 h-4 text-teal-600" />
+              </div>
+              <p className="text-xl font-bold text-teal-950 mt-1">৳{formatCurrency(compTotalLabour)}</p>
+              <p className="text-[11px] text-teal-600 mt-0.5">
+                {compTotalActual > 0 ? Math.round((compTotalLabour / compTotalActual) * 100) : 0}% of actual cost
+              </p>
+            </div>
+
+            <div className={cn(
+              "border rounded-xl p-4 shadow-sm",
+              compVariance >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+            )}>
+              <div className="flex items-center justify-between">
+                <p className={cn("text-xs font-semibold", compVariance >= 0 ? "text-green-700" : "text-red-700")}>
+                  {compVariance >= 0 ? "Budget Savings" : "Budget Overrun"}
+                </p>
+                <CheckCircle className={cn("w-4 h-4", compVariance >= 0 ? "text-green-600" : "text-red-600")} />
+              </div>
+              <p className={cn("text-xl font-bold mt-1", compVariance >= 0 ? "text-green-950" : "text-red-950")}>
+                {compVariance >= 0 ? "+" : "-"}৳{formatCurrency(Math.abs(compVariance))}
+              </p>
+              <p className={cn("text-[11px] font-medium mt-0.5", compVariance >= 0 ? "text-green-700" : "text-red-700")}>
+                Actual Cost: ৳{formatCurrency(compTotalActual)}
+              </p>
+            </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
+
+          <div className="flex items-center justify-between flex-wrap gap-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+              <input
+                value={compSearch}
+                onChange={(e) => setCompSearch(e.target.value)}
+                placeholder="Search BOQ item by name or specification..."
+                className="w-full max-w-sm px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+              <select
+                value={compPhase}
+                onChange={(e) => setCompPhase(e.target.value)}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+              >
+                <option value="all">All Phases</option>
+                {uniquePhases.map((phase) => (
+                  <option key={phase} value={phase}>{phase}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => exportBoqComparison("xlsx")}
+                className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg shadow-sm"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+              </button>
+              <button
+                onClick={() => exportBoqComparison("pdf")}
+                className="flex items-center gap-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg shadow-sm"
+              >
+                <FileDown className="w-3.5 h-3.5" /> PDF
+              </button>
+              <button
+                onClick={() => { setEditBoqId(null); setBoqForm(emptyBoq); setShowBoqForm(true); }}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg shadow-sm"
+              >
+                <Plus className="w-4 h-4" /> + Add BOQ Item
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto shadow-sm">
+            <table className="w-full text-xs">
               <thead>
-                <tr className="bg-amber-500 text-white">
-                  {["#", "PHASE", "DESCRIPTION", "UNIT", "QTY", "UNIT RATE", "MATERIAL", "LABOUR", "TOTAL COST", "ACTIONS"].map((h) => (
-                    <th key={h} className="px-3 py-3 text-left text-xs font-semibold whitespace-nowrap">{h}</th>
-                  ))}
+                <tr className="bg-amber-500 text-white divide-x divide-amber-400/30">
+                  <th className="px-3 py-3 text-left font-semibold w-8">#</th>
+                  <th className="px-3 py-3 text-left font-semibold">PHASE / STAGE</th>
+                  <th className="px-3 py-3 text-left font-semibold">ITEM & SPECIFICATION</th>
+                  <th className="px-3 py-3 text-center font-semibold">UNIT</th>
+                  <th className="px-3 py-3 text-right font-semibold">EST. QTY</th>
+                  <th className="px-3 py-3 text-right font-semibold">UNIT RATE (৳)</th>
+                  <th className="px-3 py-3 text-right font-semibold bg-amber-600/60">EST. BUDGET (৳)<br /><span className="text-[10px] font-normal text-amber-100">(Qty × Rate)</span></th>
+                  <th className="px-3 py-3 text-right font-semibold">MATERIAL (৳)<br /><span className="text-[10px] font-normal text-amber-100">(কাঁচামাল)</span></th>
+                  <th className="px-3 py-3 text-right font-semibold">LABOUR (৳)<br /><span className="text-[10px] font-normal text-amber-100">(মজুরি)</span></th>
+                  <th className="px-3 py-3 text-right font-semibold bg-amber-600/60">TOTAL COST (৳)<br /><span className="text-[10px] font-normal text-amber-100">(Mat + Lab)</span></th>
+                  <th className="px-3 py-3 text-center font-semibold">VARIANCE & STATUS</th>
+                  <th className="px-3 py-3 text-center font-semibold">ACTIONS</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
-                {boqItems.length === 0 && (
-                  <tr><td colSpan={10} className="text-center py-12 text-gray-400 text-sm">No BOQ items yet. Click &quot;Add Item&quot; to start.</td></tr>
-                )}
-                {boqItems.map((item, i) => (
-                  <tr key={item.id} className="hover:bg-amber-50 transition-colors">
-                    <td className="px-3 py-2.5 text-xs text-gray-400">{i + 1}</td>
-                    <td className="px-3 py-2.5 text-xs">
-                      {item.phase ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-medium">{item.phase}</span> : <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700 max-w-36 truncate">{item.description}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-500">{item.unit || "—"}</td>
-                    <td className="px-3 py-2.5 text-xs text-right">{item.quantity.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-xs text-right">{item.unitRate.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-xs text-right">{item.materialCost.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-xs text-right">{item.laborCost.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-xs text-right font-bold text-gray-800">{item.totalCost.toLocaleString()}</td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => openEditBoq(item)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"><Pencil className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => deleteBoq(item.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
+              <tbody className="divide-y divide-gray-100">
+                {compFiltered.length === 0 && (
+                  <tr>
+                    <td colSpan={12} className="text-center py-12 text-gray-400 text-sm">
+                      No BOQ items found. Click &quot;+ Add BOQ Item&quot; to add materials and labour.
                     </td>
                   </tr>
-                ))}
+                )}
+                {compFiltered.map((item, i) => {
+                  const estBudget = item.quantity * item.unitRate;
+                  const actualCost = item.totalCost;
+                  const variance = estBudget - actualCost;
+                  const variancePct = estBudget > 0 ? ((variance / estBudget) * 100).toFixed(1) : "0";
+                  const isSaved = variance > 0.01;
+                  const isOver = variance < -0.01;
+
+                  return (
+                    <tr key={item.id} className="hover:bg-amber-50/50 transition-colors divide-x divide-gray-50">
+                      <td className="px-3 py-2.5 text-gray-400 text-center">{i + 1}</td>
+                      <td className="px-3 py-2.5">
+                        {item.phase ? (
+                          <span className="bg-amber-50 text-amber-700 border border-amber-200/80 px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap">
+                            {item.phase}
+                          </span>
+                        ) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5 font-medium text-gray-800 max-w-[200px] truncate" title={item.description}>
+                        {item.description}
+                      </td>
+                      <td className="px-3 py-2.5 text-center text-gray-600">{item.unit || "—"}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold text-gray-700">{item.quantity.toLocaleString()}</td>
+                      <td className="px-3 py-2.5 text-right text-gray-700">৳{formatCurrency(item.unitRate)}</td>
+                      <td className="px-3 py-2.5 text-right font-bold text-blue-900 bg-blue-50/30">৳{formatCurrency(estBudget)}</td>
+                      <td className="px-3 py-2.5 text-right font-medium text-amber-800">৳{formatCurrency(item.materialCost)}</td>
+                      <td className="px-3 py-2.5 text-right font-medium text-teal-800">৳{formatCurrency(item.laborCost)}</td>
+                      <td className="px-3 py-2.5 text-right font-extrabold text-gray-900 bg-gray-50/50">৳{formatCurrency(actualCost)}</td>
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                        {isSaved ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">
+                            🟢 Saved ৳{formatCurrency(variance)} ({variancePct}%)
+                          </span>
+                        ) : isOver ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                            🔴 Over ৳{formatCurrency(Math.abs(variance))} ({Math.abs(Number(variancePct))}%)
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                            🔵 Matched 100%
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => openEditBoq(item)} className="p-1 text-blue-600 hover:bg-blue-50 rounded" title="Edit Item">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => deleteBoq(item.id)} className="p-1 text-red-500 hover:bg-red-50 rounded" title="Delete Item">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
-              {boqItems.length > 0 && (
+              {compFiltered.length > 0 && (
                 <tfoot>
-                  <tr className="bg-amber-50 border-t border-amber-100 font-semibold">
-                    <td colSpan={8} className="px-3 py-3 text-xs text-gray-700">TOTAL</td>
-                    <td className="px-3 py-3 text-xs text-right text-amber-700 font-bold">
-                      {boqItems.reduce((a, b) => a + b.totalCost, 0).toLocaleString()}
+                  <tr className="bg-amber-50 font-bold border-t border-amber-200 text-gray-800 divide-x divide-amber-200/50">
+                    <td colSpan={4} className="px-3 py-3 text-right">TOTAL SUMMARY:</td>
+                    <td className="px-3 py-3 text-right">{compFiltered.reduce((a, b) => a + b.quantity, 0).toLocaleString()}</td>
+                    <td className="px-3 py-3 text-right">—</td>
+                    <td className="px-3 py-3 text-right text-blue-900 font-extrabold text-sm">৳{formatCurrency(compTotalBudget)}</td>
+                    <td className="px-3 py-3 text-right text-amber-900 font-bold">৳{formatCurrency(compTotalMaterial)}</td>
+                    <td className="px-3 py-3 text-right text-teal-900 font-bold">৳{formatCurrency(compTotalLabour)}</td>
+                    <td className="px-3 py-3 text-right text-gray-900 font-extrabold text-sm">৳{formatCurrency(compTotalActual)}</td>
+                    <td className="px-3 py-3 text-center">
+                      <span className={cn(
+                        "px-2 py-1 rounded text-xs font-bold",
+                        compVariance >= 0 ? "text-green-700 bg-green-100" : "text-red-700 bg-red-100"
+                      )}>
+                        {compVariance >= 0 ? `Saved ৳${formatCurrency(compVariance)}` : `Over ৳${formatCurrency(Math.abs(compVariance))}`}
+                      </span>
                     </td>
                     <td />
                   </tr>
@@ -1069,92 +1324,395 @@ export default function ProjectDetailPage() {
 
       {/* ══ BOQ COMPARISON ═════════════════════════════════════════════════════ */}
       {tab === "BOQ Comparison" && (
-        <div>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Phase / Category</label>
-              <select value={compPhase} onChange={(e) => setCompPhase(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400">
-                <option value="all">All Phases</option>
-                {uniquePhases.map((p) => <option key={p} value={p as string}>{p}</option>)}
-              </select>
+        <div className="space-y-4">
+          {/* Top KPI Cards for BOQ Comparison */}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-blue-700">Estimated BOQ Budget</p>
+                <DollarSign className="w-4 h-4 text-blue-600" />
+              </div>
+              <p className="text-xl font-bold text-blue-950 mt-1">৳{formatCurrency(compTotalBudget)}</p>
+              <p className="text-[11px] text-blue-600 mt-0.5">{compFiltered.length} items in scope</p>
             </div>
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <label className="block text-xs text-gray-500 mb-1">Search</label>
-                <input value={compSearch} onChange={(e) => setCompSearch(e.target.value)} placeholder="Search description..."
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400" />
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-amber-700">Material Cost (কাঁচামাল)</p>
+                <Receipt className="w-4 h-4 text-amber-600" />
+              </div>
+              <p className="text-xl font-bold text-amber-950 mt-1">৳{formatCurrency(compTotalMaterial)}</p>
+              <p className="text-[11px] text-amber-600 mt-0.5">
+                {compTotalActual > 0 ? Math.round((compTotalMaterial / compTotalActual) * 100) : 0}% of actual cost
+              </p>
+            </div>
+
+            <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-teal-700">Labour Cost (মজুরি)</p>
+                <Receipt className="w-4 h-4 text-teal-600" />
+              </div>
+              <p className="text-xl font-bold text-teal-950 mt-1">৳{formatCurrency(compTotalLabour)}</p>
+              <p className="text-[11px] text-teal-600 mt-0.5">
+                {compTotalActual > 0 ? Math.round((compTotalLabour / compTotalActual) * 100) : 0}% of actual cost
+              </p>
+            </div>
+
+            <div className={cn(
+              "border rounded-xl p-4 shadow-sm",
+              compVariance >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+            )}>
+              <div className="flex items-center justify-between">
+                <p className={cn("text-xs font-semibold", compVariance >= 0 ? "text-green-700" : "text-red-700")}>
+                  {compVariance >= 0 ? "Budget Variance (Saved)" : "Budget Variance (Over)"}
+                </p>
+                <CheckCircle className={cn("w-4 h-4", compVariance >= 0 ? "text-green-600" : "text-red-600")} />
+              </div>
+              <p className={cn("text-xl font-bold mt-1", compVariance >= 0 ? "text-green-950" : "text-red-950")}>
+                {compVariance >= 0 ? "+" : "-"}৳{formatCurrency(Math.abs(compVariance))}
+              </p>
+              <p className={cn("text-[11px] font-medium mt-0.5", compVariance >= 0 ? "text-green-700" : "text-red-700")}>
+                Total Cost: ৳{formatCurrency(compTotalActual)} ({compVariancePct}% {compVariance >= 0 ? "under" : "over"})
+              </p>
+            </div>
+          </div>
+
+          {/* Filter Bar & Quick Phase Selector */}
+          <div className="bg-white p-3.5 rounded-xl border border-gray-100 shadow-sm space-y-3">
+            {/* Quick Phase Selection Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+              <span className="text-xs font-bold text-gray-600 whitespace-nowrap mr-1">Phase Filter:</span>
+              <button
+                onClick={() => { setCompPhase("all"); setCompSubcategory("all"); }}
+                className={cn(
+                  "px-3 py-1 text-xs rounded-lg font-medium whitespace-nowrap transition-all",
+                  compPhase === "all"
+                    ? "bg-amber-500 text-white shadow-sm font-semibold"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                )}
+              >
+                All Phases ({boqItems.length})
+              </button>
+              {uniquePhases.map((p) => {
+                const phaseItemCount = boqItems.filter((b) => b.phase === p).length;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => { setCompPhase(p as string); setCompSubcategory("all"); }}
+                    className={cn(
+                      "px-3 py-1 text-xs rounded-lg font-medium whitespace-nowrap transition-all",
+                      compPhase === p
+                        ? "bg-amber-500 text-white shadow-sm font-semibold"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    )}
+                  >
+                    {p} ({phaseItemCount})
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Subcategory Filter & Search & Actions */}
+            <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-gray-50">
+              <div className="flex items-center gap-2 flex-1 min-w-[260px] flex-wrap">
+                <input
+                  value={compSearch}
+                  onChange={(e) => setCompSearch(e.target.value)}
+                  placeholder="Search item, specification, or category..."
+                  className="w-full max-w-xs px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+
+                {availableCompSubcategories.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-500 font-medium whitespace-nowrap">Subcategory:</span>
+                    <select
+                      value={compSubcategory}
+                      onChange={(e) => setCompSubcategory(e.target.value)}
+                      className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 font-medium text-gray-700"
+                    >
+                      <option value="all">All Subcategories ({availableCompSubcategories.length})</option>
+                      {availableCompSubcategories.map((sub) => (
+                        <option key={sub} value={sub}>{sub}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <span className="text-xs text-gray-400">Showing {compFiltered.length} items</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => exportBoqComparison("xlsx")}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg shadow-sm"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+                </button>
+                <button
+                  onClick={() => exportBoqComparison("pdf")}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg shadow-sm"
+                >
+                  <FileDown className="w-3.5 h-3.5" /> PDF
+                </button>
+                <button
+                  onClick={() => { setEditBoqId(null); setBoqForm(emptyBoq); setShowBoqForm(true); }}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg shadow-sm"
+                >
+                  <Plus className="w-3.5 h-3.5" /> + Add BOQ Item
+                </button>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <button onClick={() => exportBoqComparison("xlsx")} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700">
-                <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
-              </button>
-              <button onClick={() => exportBoqComparison("pdf")} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600">
-                <FileDown className="w-3.5 h-3.5" /> PDF
-              </button>
-              <span className="text-xs text-gray-500 ml-1">Show</span>
-              <select value={compShow} onChange={(e) => setCompShow(Number(e.target.value))}
-                className="px-2 py-1 text-xs border border-gray-200 rounded">
-                {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <span className="text-xs text-gray-500">entries</span>
-            </div>
-            <span className="text-xs text-gray-400">{compFiltered.length} items</span>
-          </div>
+          {/* ══ Phase → Subcategory Cost Transparency Tree Widget ══════════════ */}
+          {phaseHierarchy.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <FolderTree className="w-4 h-4 text-amber-600" />
+                  <h3 className="text-sm font-bold text-gray-800">
+                    Phase → Subcategory Cost Transparency Breakdown
+                  </h3>
+                  <span className="text-xs text-gray-400">({phaseHierarchy.length} phases active)</span>
+                </div>
+                <div className="text-xs text-gray-500">
+                  Click phase to view subcategory breakdown
+                </div>
+              </div>
 
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-amber-500 text-white">
-                  {["PHASE", "DESCRIPTION", "BOQ QTY", "UNIT RATE", "BOQ COST", "MATERIAL", "LABOUR", "TOTAL COST", "STATUS"].map((h) => (
-                    <th key={h} className="px-3 py-3 text-left font-semibold whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {compFiltered.length === 0 && <tr><td colSpan={9} className="text-center py-10 text-gray-400">No BOQ items</td></tr>}
-                {compFiltered.slice(0, compShow).map((item) => {
-                  const boqCost = item.quantity * item.unitRate;
-                  const diff = item.totalCost - boqCost;
-                  const status = Math.abs(diff) < 0.01 ? "Match" : diff > 0 ? "Over Budget" : "Under Budget";
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {phaseHierarchy.map((p) => {
+                  const isExpanded = expandedPhases[p.phase] !== false;
+                  const phaseDiff = p.totalBudget - p.totalCost;
+                  const isPhaseSaved = phaseDiff >= 0;
+
                   return (
-                    <tr key={item.id} className="hover:bg-amber-50 transition-colors">
-                      <td className="px-3 py-2.5">{item.phase ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{item.phase}</span> : "—"}</td>
-                      <td className="px-3 py-2.5 max-w-36 truncate">{item.description}</td>
-                      <td className="px-3 py-2.5 text-right">{item.quantity.toLocaleString()}</td>
-                      <td className="px-3 py-2.5 text-right">{item.unitRate.toLocaleString()}</td>
-                      <td className="px-3 py-2.5 text-right">{boqCost.toLocaleString()}</td>
-                      <td className="px-3 py-2.5 text-right">{item.materialCost.toLocaleString()}</td>
-                      <td className="px-3 py-2.5 text-right">{item.laborCost.toLocaleString()}</td>
-                      <td className="px-3 py-2.5 text-right font-bold">{item.totalCost.toLocaleString()}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={cn("font-semibold",
-                          status === "Match" ? "text-green-600" : status === "Over Budget" ? "text-red-600" : "text-orange-500"
-                        )}>{status}</span>
-                      </td>
-                    </tr>
+                    <div key={p.phase} className="border border-gray-200 rounded-xl bg-gray-50/60 overflow-hidden shadow-xs">
+                      {/* Phase Header */}
+                      <div
+                        onClick={() => togglePhase(p.phase)}
+                        className="p-3 bg-white border-b border-gray-100 flex items-center justify-between cursor-pointer hover:bg-amber-50/40 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Layers className="w-4 h-4 text-amber-500 shrink-0" />
+                          <div className="min-w-0">
+                            <span className="font-bold text-xs text-gray-900 block truncate" title={p.phase}>
+                              {p.phase}
+                            </span>
+                            <span className="text-[11px] text-gray-500">
+                              Budget: ৳{formatCurrency(p.totalBudget)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0 flex items-center gap-2">
+                          <div>
+                            <span className="font-bold text-xs text-amber-900 block">
+                              ৳{formatCurrency(p.totalCost)}
+                            </span>
+                            <span className={cn("text-[10px] font-semibold", isPhaseSaved ? "text-green-700" : "text-red-600")}>
+                              {isPhaseSaved ? `+৳${formatCurrency(phaseDiff)}` : `-৳${formatCurrency(Math.abs(phaseDiff))}`}
+                            </span>
+                          </div>
+                          {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                        </div>
+                      </div>
+
+                      {/* Subcategories Tree List */}
+                      {isExpanded && (
+                        <div className="p-3 space-y-2 text-xs">
+                          {p.subcategories.map((sub, idx) => {
+                            const pctOfPhase = p.totalCost > 0 ? ((sub.cost / p.totalCost) * 100).toFixed(0) : "0";
+                            const isLast = idx === p.subcategories.length - 1;
+
+                            return (
+                              <div key={sub.subcategory} className="space-y-1">
+                                <div className="flex items-center justify-between font-mono text-[11px]">
+                                  <span className="text-gray-700 font-sans font-medium flex items-center gap-1.5">
+                                    <span className="text-gray-400 font-mono">{isLast ? "└──" : "├──"}</span>
+                                    {sub.subcategory}
+                                    <span className="text-[10px] text-gray-400 font-sans font-normal">
+                                      ({sub.items.length} {sub.items.length === 1 ? "item" : "items"})
+                                    </span>
+                                  </span>
+                                  <span className="font-bold text-gray-900 font-sans">
+                                    ৳{formatCurrency(sub.cost)}
+                                  </span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-1 ml-5 max-w-[calc(100%-20px)]">
+                                  <div
+                                    className="bg-amber-500 h-1 rounded-full"
+                                    style={{ width: `${Math.min(100, Math.max(2, Number(pctOfPhase)))}%` }}
+                                    title={`${pctOfPhase}% of phase cost`}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          <div className="pt-2 border-t border-gray-200/80 flex items-center justify-between text-[11px] font-bold text-gray-800">
+                            <span>Phase Total Cost:</span>
+                            <span className="text-amber-900">৳{formatCurrency(p.totalCost)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
-              </tbody>
-              {compFiltered.length > 0 && (
-                <tfoot>
-                  <tr className="bg-amber-50 font-semibold border-t border-amber-100">
-                    <td colSpan={2} className="px-3 py-2.5">TOTAL</td>
-                    <td className="px-3 py-2.5 text-right">{compFiltered.reduce((a, b) => a + b.quantity, 0).toLocaleString()}</td>
-                    <td />
-                    <td className="px-3 py-2.5 text-right">{compFiltered.reduce((a, b) => a + b.quantity * b.unitRate, 0).toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-right">{compFiltered.reduce((a, b) => a + b.materialCost, 0).toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-right">{compFiltered.reduce((a, b) => a + b.laborCost, 0).toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-right text-amber-700">{compFiltered.reduce((a, b) => a + b.totalCost, 0).toLocaleString()}</td>
-                    <td />
+              </div>
+            </div>
+          )}
+
+          {/* Detailed 12-Column Comparison Table */}
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gradient-to-r from-amber-500 to-amber-600 text-white">
+                    <th className="px-3 py-3 text-left font-semibold">#</th>
+                    <th className="px-3 py-3 text-left font-semibold">PHASE / STAGE</th>
+                    <th className="px-3 py-3 text-left font-semibold">SUBCATEGORY</th>
+                    <th className="px-3 py-3 text-left font-semibold min-w-[200px]">ITEM & SPECIFICATION</th>
+                    <th className="px-3 py-3 text-center font-semibold">UNIT</th>
+                    <th className="px-3 py-3 text-right font-semibold">EST. QTY</th>
+                    <th className="px-3 py-3 text-right font-semibold">UNIT RATE (৳)</th>
+                    <th className="px-3 py-3 text-right font-semibold bg-amber-700/30">EST. BUDGET (৳)</th>
+                    <th className="px-3 py-3 text-right font-semibold bg-amber-800/30">MATERIAL (৳)</th>
+                    <th className="px-3 py-3 text-right font-semibold bg-amber-800/30">LABOUR (৳)</th>
+                    <th className="px-3 py-3 text-right font-semibold bg-amber-900/40">TOTAL COST (৳)</th>
+                    <th className="px-3 py-3 text-center font-semibold min-w-[140px]">VARIANCE & STATUS</th>
+                    <th className="px-3 py-3 text-center font-semibold">ACTIONS</th>
                   </tr>
-                </tfoot>
-              )}
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {compFiltered.length === 0 && (
+                    <tr>
+                      <td colSpan={13} className="text-center py-12 text-gray-400">
+                        No BOQ items match your filter. Click &quot;+ Add BOQ Item&quot; to add an item.
+                      </td>
+                    </tr>
+                  )}
+                  {compFiltered.slice(0, compShow).map((item, i) => {
+                    const estBudget = item.quantity * item.unitRate;
+                    const diff = estBudget - item.totalCost;
+                    const isMatch = Math.abs(diff) < 0.01;
+                    const isSaved = diff > 0;
+                    const diffPct = estBudget > 0 ? Math.abs((diff / estBudget) * 100).toFixed(1) : "0";
+
+                    return (
+                      <tr key={item.id} className="hover:bg-amber-50/50 transition-colors">
+                        <td className="px-3 py-2.5 text-gray-400 font-medium">{i + 1}</td>
+                        <td className="px-3 py-2.5">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                            {item.phase || "General"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700 border border-gray-200 whitespace-nowrap">
+                            {item.subcategory || "General"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 font-medium text-gray-800">
+                          {item.description}
+                        </td>
+                        <td className="px-3 py-2.5 text-center text-gray-500 font-mono">
+                          {item.unit || "—"}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-gray-700">
+                          {item.quantity.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-gray-600">
+                          ৳{formatCurrency(item.unitRate)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-bold text-blue-900 bg-blue-50/30">
+                          ৳{formatCurrency(estBudget)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-amber-900 bg-amber-50/20">
+                          ৳{formatCurrency(item.materialCost)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-teal-900 bg-teal-50/20">
+                          ৳{formatCurrency(item.laborCost)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-extrabold text-gray-950 bg-gray-50">
+                          ৳{formatCurrency(item.totalCost)}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          {isMatch ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                              Matched 100%
+                            </span>
+                          ) : isSaved ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 inline-flex items-center gap-1">
+                              🟢 Saved ৳{formatCurrency(diff)} ({diffPct}%)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 inline-flex items-center gap-1">
+                              🔴 Over ৳{formatCurrency(Math.abs(diff))} ({diffPct}%)
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => openEditBoq(item)}
+                              title="Edit"
+                              className="p-1 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => deleteBoq(item.id)}
+                              title="Delete"
+                              className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {compFiltered.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-amber-50/80 font-bold border-t-2 border-amber-200 text-gray-900">
+                      <td colSpan={5} className="px-3 py-3 text-right font-extrabold text-gray-800">
+                        TOTAL ({compPhase === "all" ? "ALL PHASES" : compPhase}):
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        {compFiltered.reduce((a, b) => a + b.quantity, 0).toLocaleString()}
+                      </td>
+                      <td />
+                      <td className="px-3 py-3 text-right text-blue-900 font-extrabold">
+                        ৳{formatCurrency(compTotalBudget)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-amber-900 font-bold">
+                        ৳{formatCurrency(compTotalMaterial)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-teal-900 font-bold">
+                        ৳{formatCurrency(compTotalLabour)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-gray-950 font-extrabold text-sm">
+                        ৳{formatCurrency(compTotalActual)}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={cn(
+                          "px-2.5 py-1 rounded-lg text-xs font-extrabold inline-block",
+                          compVariance >= 0
+                            ? "bg-green-100 text-green-800 border border-green-300"
+                            : "bg-red-100 text-red-800 border border-red-300"
+                        )}>
+                          {compVariance >= 0
+                            ? `Net Savings: +৳${formatCurrency(compVariance)}`
+                            : `Over Budget: -৳${formatCurrency(Math.abs(compVariance))}`}
+                        </span>
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -1214,27 +1772,94 @@ export default function ProjectDetailPage() {
             </div>
             <form onSubmit={submitBoq} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <Inp label="Phase (optional)" placeholder="e.g. Foundation, Structure" value={boqForm.phase} onChange={(e) => setBoqForm({ ...boqForm, phase: e.target.value })} />
-                <Inp label="Unit (e.g. m², kg, pcs)" placeholder="Unit" value={boqForm.unit} onChange={(e) => setBoqForm({ ...boqForm, unit: e.target.value })} />
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Phase / Stage <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={boqForm.phase}
+                    onChange={(e) => setBoqForm({ ...boqForm, phase: e.target.value, subcategory: "" })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  >
+                    <option value="">— Select Phase —</option>
+                    {PROJECT_PHASES.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Subcategory {boqForm.phase ? <span className="text-amber-600">({getSubcategoriesForPhase(boqForm.phase).length} available)</span> : ""}
+                  </label>
+                  <select
+                    value={boqForm.subcategory}
+                    onChange={(e) => setBoqForm({ ...boqForm, subcategory: e.target.value })}
+                    disabled={!boqForm.phase}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white disabled:bg-gray-100 disabled:text-gray-400"
+                  >
+                    <option value="">— Select Subcategory —</option>
+                    {getSubcategoriesForPhase(boqForm.phase).map((sub) => (
+                      <option key={sub} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="col-span-2">
-                  <Inp label="Description *" required placeholder="Item description" value={boqForm.description} onChange={(e) => setBoqForm({ ...boqForm, description: e.target.value })} />
+                  <Inp label="Item Description & Specification *" required placeholder="e.g. 500W Grade BSRM Rebar supply & binding" value={boqForm.description} onChange={(e) => setBoqForm({ ...boqForm, description: e.target.value })} />
                 </div>
-                <Inp label="Quantity" type="number" min="0" placeholder="0" value={boqForm.quantity} onChange={(e) => setBoqForm({ ...boqForm, quantity: e.target.value })} />
-                <Inp label="Unit Rate (৳)" type="number" min="0" placeholder="0" value={boqForm.unitRate} onChange={(e) => setBoqForm({ ...boqForm, unitRate: e.target.value })} />
-                <Inp label="Material Cost (৳)" type="number" min="0" placeholder="0" value={boqForm.materialCost} onChange={(e) => setBoqForm({ ...boqForm, materialCost: e.target.value })} />
-                <Inp label="Labour Cost (৳)" type="number" min="0" placeholder="0" value={boqForm.laborCost} onChange={(e) => setBoqForm({ ...boqForm, laborCost: e.target.value })} />
+                <Inp label="Unit (e.g. Ton, Bags, Piles, m³, Sqft)" placeholder="Unit" value={boqForm.unit} onChange={(e) => setBoqForm({ ...boqForm, unit: e.target.value })} />
+                <Inp label="Estimated Quantity" type="number" min="0" placeholder="0" value={boqForm.quantity} onChange={(e) => setBoqForm({ ...boqForm, quantity: e.target.value })} />
+                <Inp label="Estimated Unit Rate (৳)" type="number" min="0" placeholder="0" value={boqForm.unitRate} onChange={(e) => setBoqForm({ ...boqForm, unitRate: e.target.value })} />
+                <Inp label="Material Cost (৳ - রড, সিমেন্ট)" type="number" min="0" placeholder="0" value={boqForm.materialCost} onChange={(e) => setBoqForm({ ...boqForm, materialCost: e.target.value })} />
+                <Inp label="Labour Cost (৳ - মজুরি)" type="number" min="0" placeholder="0" value={boqForm.laborCost} onChange={(e) => setBoqForm({ ...boqForm, laborCost: e.target.value })} />
               </div>
+              
+              {/* Real-Time Live Calculation & Variance Card */}
               {(boqForm.quantity || boqForm.unitRate || boqForm.materialCost || boqForm.laborCost) && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-sm">
-                  <span className="text-amber-700">Total Cost: </span>
-                  <span className="font-bold text-amber-800">
-                    {(((parseFloat(boqForm.quantity) || 0) * (parseFloat(boqForm.unitRate) || 0)) + (parseFloat(boqForm.materialCost) || 0) + (parseFloat(boqForm.laborCost) || 0)).toLocaleString()}
-                  </span>
-                </div>
+                (() => {
+                  const qty = parseFloat(boqForm.quantity) || 0;
+                  const rate = parseFloat(boqForm.unitRate) || 0;
+                  const mat = parseFloat(boqForm.materialCost) || 0;
+                  const lab = parseFloat(boqForm.laborCost) || 0;
+                  const estBudget = qty * rate;
+                  const totalBreakdown = mat + lab;
+                  const grandTotal = estBudget > 0 ? (mat > 0 || lab > 0 ? totalBreakdown : estBudget) : totalBreakdown;
+                  const diff = estBudget - grandTotal;
+
+                  return (
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3.5 text-xs space-y-1.5 shadow-sm">
+                      <div className="flex justify-between font-medium">
+                        <span className="text-gray-600">Estimated BOQ Budget (Qty × Rate):</span>
+                        <span className="font-bold text-blue-900">৳{formatCurrency(estBudget)}</span>
+                      </div>
+                      <div className="flex justify-between font-medium">
+                        <span className="text-gray-600">Material + Labour Breakdown:</span>
+                        <span className="font-bold text-gray-800">৳{formatCurrency(mat)} + ৳{formatCurrency(lab)} = ৳{formatCurrency(totalBreakdown)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold pt-1 border-t border-amber-200/60">
+                        <span className="text-gray-800">Calculated Item Cost:</span>
+                        <span className="text-amber-900 font-extrabold text-sm">৳{formatCurrency(grandTotal)}</span>
+                      </div>
+                      {estBudget > 0 && totalBreakdown > 0 && (
+                        <div className="flex justify-between items-center pt-1 text-[11px]">
+                          <span className="text-gray-500">Budget vs Breakdown Status:</span>
+                          <span className={cn("font-bold px-2 py-0.5 rounded-full",
+                            diff >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                          )}>
+                            {diff >= 0 ? `🟢 Saved ৳${formatCurrency(diff)}` : `🔴 Over by ৳${formatCurrency(Math.abs(diff))}`}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
               )}
+
               <div className="flex justify-end gap-3 pt-1">
-                <button type="button" onClick={() => setShowBoqForm(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                <button type="submit" className="px-5 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">{editBoqId ? "Update" : "Add"}</button>
+                <button type="button" onClick={() => setShowBoqForm(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700">Cancel</button>
+                <button type="submit" className="px-5 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold shadow-sm">{editBoqId ? "Update Item" : "Add to BOQ"}</button>
               </div>
             </form>
           </div>
@@ -1293,7 +1918,7 @@ export default function ProjectDetailPage() {
               <button onClick={() => setShowProgForm(false)}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
             <form onSubmit={submitProgress} className="space-y-4">
-              <Inp label="Phase / Activity *" required placeholder="e.g. Foundation, Slab, Plaster" value={progForm.phase} onChange={(e) => setProgForm({ ...progForm, phase: e.target.value })} />
+              <Inp label="Phase / Activity *" required list="phase-suggestions" placeholder="e.g. Foundation & Substructure" value={progForm.phase} onChange={(e) => setProgForm({ ...progForm, phase: e.target.value })} />
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Progress: {progForm.percentage}%</label>
