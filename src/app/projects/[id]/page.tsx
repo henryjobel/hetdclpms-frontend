@@ -18,7 +18,12 @@ import {
   FolderTree, Layers, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
-import { PROJECT_PHASES, getSubcategoriesForPhase, normalizePhaseName } from "@/lib/constants";
+import {
+  PROJECT_PHASES,
+  getSubcategoriesForPhase,
+  normalizePhaseName,
+  getSubcategoryProfile,
+} from "@/lib/constants";
 
 // ─────────────────────── Types (matching Prisma schema exactly) ───────────────
 interface ProjectDetail {
@@ -1771,6 +1776,19 @@ export default function ProjectDetailPage() {
               <button onClick={() => setShowBoqForm(false)}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
             <form onSubmit={submitBoq} className="p-6 space-y-4">
+              {/* Dynamic Trade Intelligence Badge */}
+              {(() => {
+                const profile = getSubcategoryProfile(boqForm.phase, boqForm.subcategory);
+                return (
+                  <div className="flex items-center justify-between bg-gray-50 border border-gray-200/80 rounded-xl px-3.5 py-2">
+                    <span className="text-xs font-semibold text-gray-500">Trade Classification:</span>
+                    <span className={cn("text-xs font-bold px-2.5 py-0.5 rounded-full border shadow-2xs", profile.badgeColor)}>
+                      {profile.workTypeLabel}
+                    </span>
+                  </div>
+                );
+              })()}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -1779,7 +1797,18 @@ export default function ProjectDetailPage() {
                   <select
                     required
                     value={boqForm.phase}
-                    onChange={(e) => setBoqForm({ ...boqForm, phase: e.target.value, subcategory: "" })}
+                    onChange={(e) => {
+                      const newPhase = e.target.value;
+                      const validSubs = getSubcategoriesForPhase(newPhase);
+                      const chosenSub = validSubs[0] || "";
+                      const prof = getSubcategoryProfile(newPhase, chosenSub);
+                      setBoqForm({
+                        ...boqForm,
+                        phase: newPhase,
+                        subcategory: chosenSub,
+                        unit: (!boqForm.unit || boqForm.unit === "1") ? prof.defaultUnit : boqForm.unit,
+                      });
+                    }}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
                   >
                     <option value="">— Select Phase —</option>
@@ -1795,7 +1824,15 @@ export default function ProjectDetailPage() {
                   </label>
                   <select
                     value={boqForm.subcategory}
-                    onChange={(e) => setBoqForm({ ...boqForm, subcategory: e.target.value })}
+                    onChange={(e) => {
+                      const newSub = e.target.value;
+                      const prof = getSubcategoryProfile(boqForm.phase, newSub);
+                      setBoqForm({
+                        ...boqForm,
+                        subcategory: newSub,
+                        unit: (!boqForm.unit || boqForm.unit === "1") ? prof.defaultUnit : boqForm.unit,
+                      });
+                    }}
                     disabled={!boqForm.phase}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white disabled:bg-gray-100 disabled:text-gray-400"
                   >
@@ -1805,16 +1842,77 @@ export default function ProjectDetailPage() {
                     ))}
                   </select>
                 </div>
-
-                <div className="col-span-2">
-                  <Inp label="Item Description & Specification *" required placeholder="e.g. 500W Grade BSRM Rebar supply & binding" value={boqForm.description} onChange={(e) => setBoqForm({ ...boqForm, description: e.target.value })} />
-                </div>
-                <Inp label="Unit (e.g. Ton, Bags, Piles, m³, Sqft)" placeholder="Unit" value={boqForm.unit} onChange={(e) => setBoqForm({ ...boqForm, unit: e.target.value })} />
-                <Inp label="Estimated Quantity" type="number" min="0" placeholder="0" value={boqForm.quantity} onChange={(e) => setBoqForm({ ...boqForm, quantity: e.target.value })} />
-                <Inp label="Estimated Unit Rate (৳)" type="number" min="0" placeholder="0" value={boqForm.unitRate} onChange={(e) => setBoqForm({ ...boqForm, unitRate: e.target.value })} />
-                <Inp label="Material Cost (৳ - রড, সিমেন্ট)" type="number" min="0" placeholder="0" value={boqForm.materialCost} onChange={(e) => setBoqForm({ ...boqForm, materialCost: e.target.value })} />
-                <Inp label="Labour Cost (৳ - মজুরি)" type="number" min="0" placeholder="0" value={boqForm.laborCost} onChange={(e) => setBoqForm({ ...boqForm, laborCost: e.target.value })} />
               </div>
+
+              {(() => {
+                const profile = getSubcategoryProfile(boqForm.phase, boqForm.subcategory);
+                return (
+                  <div className="space-y-3">
+                    <div>
+                      <Inp
+                        label="Item Description & Specification *"
+                        required
+                        placeholder={profile.descPlaceholder}
+                        value={boqForm.description}
+                        onChange={(e) => setBoqForm({ ...boqForm, description: e.target.value })}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-medium text-gray-700">Unit (একক) *</label>
+                        <span className="text-[11px] text-gray-400">Quick select or type below:</span>
+                      </div>
+                      <input
+                        required
+                        value={boqForm.unit}
+                        onChange={(e) => setBoqForm({ ...boqForm, unit: e.target.value })}
+                        placeholder={`e.g. ${profile.defaultUnit}`}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                      />
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        <span className="text-[11px] text-gray-500 font-medium mr-0.5">Suggested:</span>
+                        {profile.suggestedUnits.map((u) => (
+                          <button
+                            type="button"
+                            key={u}
+                            onClick={() => setBoqForm({ ...boqForm, unit: u })}
+                            className={cn(
+                              "px-2.5 py-0.5 text-xs rounded-md font-medium transition-all border",
+                              boqForm.unit === u
+                                ? "bg-amber-500 text-white border-amber-600 shadow-xs"
+                                : "bg-gray-100 text-gray-700 border-gray-200 hover:bg-amber-100 hover:border-amber-300"
+                            )}
+                          >
+                            {u}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <Inp label="Estimated Quantity" type="number" min="0" placeholder="0" value={boqForm.quantity} onChange={(e) => setBoqForm({ ...boqForm, quantity: e.target.value })} />
+                      <Inp label="Estimated Unit Rate (৳)" type="number" min="0" placeholder="0" value={boqForm.unitRate} onChange={(e) => setBoqForm({ ...boqForm, unitRate: e.target.value })} />
+                      <Inp
+                        label={profile.materialLabel}
+                        type="number"
+                        min="0"
+                        placeholder={profile.materialPlaceholder}
+                        value={boqForm.materialCost}
+                        onChange={(e) => setBoqForm({ ...boqForm, materialCost: e.target.value })}
+                      />
+                      <Inp
+                        label={profile.laborLabel}
+                        type="number"
+                        min="0"
+                        placeholder={profile.laborPlaceholder}
+                        value={boqForm.laborCost}
+                        onChange={(e) => setBoqForm({ ...boqForm, laborCost: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
               
               {/* Real-Time Live Calculation & Variance Card */}
               {(boqForm.quantity || boqForm.unitRate || boqForm.materialCost || boqForm.laborCost) && (

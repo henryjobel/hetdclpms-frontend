@@ -10,7 +10,12 @@ import {
   ChevronDown, ChevronRight, Layers, FolderTree
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
-import { PROJECT_PHASES, getSubcategoriesForPhase, normalizePhaseName } from "@/lib/constants";
+import {
+  PROJECT_PHASES,
+  getSubcategoriesForPhase,
+  normalizePhaseName,
+  getSubcategoryProfile,
+} from "@/lib/constants";
 
 interface Project { id: string; name: string; }
 interface BOQItem {
@@ -96,12 +101,28 @@ export default function BOQPage() {
   function handlePhaseChange(newPhase: string) {
     const validSubs = getSubcategoriesForPhase(newPhase);
     const subStillValid = validSubs.includes(form.subcategory);
+    const chosenSub = subStillValid ? form.subcategory : (validSubs[0] || "");
+    const profile = getSubcategoryProfile(newPhase, chosenSub);
     setForm({
       ...form,
       phase: newPhase,
-      subcategory: subStillValid ? form.subcategory : "",
+      subcategory: chosenSub,
+      unit: (!form.unit || form.unit === "1") ? profile.defaultUnit : form.unit,
     });
   }
+
+  function handleSubcategoryChange(newSub: string) {
+    const profile = getSubcategoryProfile(form.phase, newSub);
+    setForm({
+      ...form,
+      subcategory: newSub,
+      unit: (!form.unit || form.unit === "1") ? profile.defaultUnit : form.unit,
+    });
+  }
+
+  const activeFormProfile = useMemo(() => {
+    return getSubcategoryProfile(form.phase, form.subcategory);
+  }, [form.phase, form.subcategory]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -703,6 +724,14 @@ export default function BOQPage() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
 
+              {/* Trade Intelligence Badge */}
+              <div className="flex items-center justify-between bg-gray-50 border border-gray-200/80 rounded-xl px-3.5 py-2">
+                <span className="text-xs font-semibold text-gray-500">Trade Classification:</span>
+                <span className={cn("text-xs font-bold px-2.5 py-0.5 rounded-full border shadow-2xs", activeFormProfile.badgeColor)}>
+                  {activeFormProfile.workTypeLabel}
+                </span>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 {/* Phase Dropdown */}
                 <div>
@@ -729,9 +758,9 @@ export default function BOQPage() {
                   </label>
                   <select
                     value={form.subcategory}
-                    onChange={(e) => setForm({ ...form, subcategory: e.target.value })}
+                    onChange={(e) => handleSubcategoryChange(e.target.value)}
                     disabled={!form.phase}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed font-medium"
                   >
                     <option value="">
                       {form.phase ? "-- Select Subcategory --" : "← Choose Phase first"}
@@ -743,25 +772,53 @@ export default function BOQPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Item Description & Specification *</label>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Item Description & Specification *
+                  </label>
                   <input
                     required
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    placeholder="e.g. RCC Column 10-inch x 15-inch Casting"
+                    placeholder={activeFormProfile.descPlaceholder}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
                   />
                 </div>
+
+                {/* Unit Field with 1-Click Quick Selector Chips */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Unit (e.g. m³, Ton, Sft)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-gray-700">
+                      Unit (একক) *
+                    </label>
+                    <span className="text-[11px] text-gray-400">Quick select or type below:</span>
+                  </div>
                   <input
+                    required
                     value={form.unit}
                     onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                    placeholder="e.g. m³, Bag, Sft"
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    placeholder={`e.g. ${activeFormProfile.defaultUnit}`}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
                   />
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-[11px] text-gray-500 font-medium mr-0.5">Suggested:</span>
+                    {activeFormProfile.suggestedUnits.map((u) => (
+                      <button
+                        type="button"
+                        key={u}
+                        onClick={() => setForm({ ...form, unit: u })}
+                        className={cn(
+                          "px-2.5 py-0.5 text-xs rounded-md font-medium transition-all border",
+                          form.unit === u
+                            ? "bg-amber-500 text-white border-amber-600 shadow-xs"
+                            : "bg-gray-100 text-gray-700 border-gray-200 hover:bg-amber-100 hover:border-amber-300"
+                        )}
+                      >
+                        {u}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -794,26 +851,30 @@ export default function BOQPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Material Cost (৳ কাঁচামাল খরচ)</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    {activeFormProfile.materialLabel}
+                  </label>
                   <input
                     type="number"
                     min="0"
                     step="any"
                     value={form.materialCost}
                     onChange={(e) => setForm({ ...form, materialCost: e.target.value })}
-                    placeholder="0"
+                    placeholder={activeFormProfile.materialPlaceholder}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Labour Cost (৳ মজুরি খরচ)</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    {activeFormProfile.laborLabel}
+                  </label>
                   <input
                     type="number"
                     min="0"
                     step="any"
                     value={form.laborCost}
                     onChange={(e) => setForm({ ...form, laborCost: e.target.value })}
-                    placeholder="0"
+                    placeholder={activeFormProfile.laborPlaceholder}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
                   />
                 </div>
