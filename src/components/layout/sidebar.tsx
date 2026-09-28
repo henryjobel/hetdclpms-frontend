@@ -34,6 +34,7 @@ import {
   Settings2,
   Clock,
   DraftingCompass,
+  BookOpen,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { APP_NAME } from "@/lib/constants";
@@ -175,6 +176,7 @@ const navItems: NavItem[] = [
       { label: "Vouchers", href: "/accounts/vouchers", icon: FileText },
       { label: "Contra Vouchers", href: "/accounts/contra-vouchers", icon: FileText },
       { label: "General Ledger", href: "/accounts/ledger", icon: ClipboardList },
+      { label: "Account Book", href: "/accounts/account-book", icon: BookOpen },
       { label: "Project-Wise Accounting", href: "/accounts/project-accounting", icon: ClipboardList },
       { label: "Pending Approvals", href: "/accounts/pending-approvals", icon: Shield },
       { label: "Trial Balance", href: "/accounts/trial-balance", icon: BarChart3 },

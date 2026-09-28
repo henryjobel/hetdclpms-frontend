@@ -16,6 +16,7 @@ import {
   FileSpreadsheet, FileDown, ArrowLeft,
   DollarSign, Receipt, CheckCircle, Clock,
   FolderTree, Layers, ChevronDown, ChevronRight,
+  ArrowDownLeft, ArrowUpRight, BookOpen,
 } from "lucide-react";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import {
@@ -48,6 +49,13 @@ interface VoucherItem {
   status: string;
   voucherDate: string;
   createdBy?: { name: string };
+  ledgerEntries?: {
+    id: string;
+    debit: number;
+    credit: number;
+    description?: string;
+    account: { id: string; code: string; name: string; type: string };
+  }[];
 }
 interface BOQItem {
   id: string; projectId: string; description: string; unit: string;
@@ -70,6 +78,35 @@ interface Quotation {
   validUntil?: string; createdAt?: string;
 }
 interface User { id: string; name: string; email: string; }
+interface Account { id: string; code: string; name: string; type: string; }
+
+function toDateInput(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function getMonthStart(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function getMonthEnd(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function addMonths(date: Date, months: number) {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
+function parseStartDate(value: string) {
+  return new Date(`${value}T00:00:00`);
+}
+
+function parseEndDate(value: string) {
+  return new Date(`${value}T23:59:59.999`);
+}
+
+function formatMonthLabel(date: Date) {
+  return date.toLocaleDateString("en-BD", { month: "short", year: "numeric" });
+}
 
 // ─────────────────────── Countdown ───────────────────────────────────────────
 function Countdown({ endDate }: { endDate: string }) {
@@ -105,7 +142,7 @@ const PRIORITY_MAP: Record<string, string> = {
   HIGH: "bg-red-100 text-red-700",
 };
 
-const TABS = ["Dashboard", "BOQ", "Task", "Expenses", "Users", "Details", "Flat/Land", "BOQ Comparison", "Quotation"];
+const TABS = ["Dashboard", "BOQ", "Task", "Expenses", "Account Book", "Users", "Details", "Flat/Land", "BOQ Comparison", "Quotation"];
 
 // ─────────────────────── Input helpers ───────────────────────────────────────
 function Inp(props: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
@@ -136,6 +173,7 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
 
   // BOQ form
@@ -163,6 +201,8 @@ export default function ProjectDetailPage() {
     payee: "",
     description: "",
     voucherDate: new Date().toISOString().slice(0, 10),
+    debitAccountId: "",
+    creditAccountId: "",
   };
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [expenseForm, setExpenseForm] = useState(emptyExpense);
@@ -170,6 +210,38 @@ export default function ProjectDetailPage() {
   const [expenseError, setExpenseError] = useState("");
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState("all");
   const [expenseSearch, setExpenseSearch] = useState("");
+
+  // Payment received form
+  const emptyReceipt = {
+    amount: "",
+    receivedFrom: "",
+    description: "",
+    voucherDate: new Date().toISOString().slice(0, 10),
+    debitAccountId: "",
+    creditAccountId: "",
+  };
+  const [showReceiptForm, setShowReceiptForm] = useState(false);
+  const [receiptForm, setReceiptForm] = useState(emptyReceipt);
+  const [savingReceipt, setSavingReceipt] = useState(false);
+  const [receiptError, setReceiptError] = useState("");
+
+  // Contra entry form
+  const emptyContra = {
+    amount: "",
+    fromAccountId: "",
+    toAccountId: "",
+    description: "",
+    voucherDate: new Date().toISOString().slice(0, 10),
+  };
+  const [showContraForm, setShowContraForm] = useState(false);
+  const [contraForm, setContraForm] = useState(emptyContra);
+  const [savingContra, setSavingContra] = useState(false);
+  const [contraError, setContraError] = useState("");
+
+  // Account book period
+  const [bookRangeMode, setBookRangeMode] = useState("month");
+  const [bookStartDate, setBookStartDate] = useState(() => toDateInput(getMonthStart()));
+  const [bookEndDate, setBookEndDate] = useState(() => toDateInput(getMonthEnd()));
 
   // Project details (land/building info) — localStorage
   const blank = { areaOfLand: "", nameOfLandOwner: "", landOwnerDeveloperRatio: "", valueOfLand: "", buildArea: "", totalNoOfBuilding: "", totalFloorOfBuilding: "", noOfFlatInEachFloor: "", totalFlatInBuilding: "", flatSize: "", totalNoOfCarParking: "" };
@@ -186,10 +258,11 @@ export default function ProjectDetailPage() {
   const fetchProject = useCallback(async () => {
     setLoading(true);
     try {
-      const [projRes, quotRes, usersRes] = await Promise.allSettled([
+      const [projRes, quotRes, usersRes, accountsRes] = await Promise.allSettled([
         projectsApi.getById(id),
         projectsApi.getQuotations(),
         usersApi.getAll(),
+        accountsApi.getChart(),
       ]);
       if (projRes.status === "fulfilled") {
         const d = projRes.value.data.data ?? projRes.value.data;
@@ -201,6 +274,9 @@ export default function ProjectDetailPage() {
       }
       if (usersRes.status === "fulfilled") {
         setUsers(usersRes.value.data.data ?? usersRes.value.data ?? []);
+      }
+      if (accountsRes.status === "fulfilled") {
+        setAccounts(accountsRes.value.data.data ?? accountsRes.value.data ?? []);
       }
     } finally {
       setLoading(false);
@@ -343,6 +419,9 @@ export default function ProjectDetailPage() {
         projectId: id,
         amount: amt,
         description: fullDesc,
+        voucherDate: new Date(expenseForm.voucherDate).toISOString(),
+        debitAccountId: expenseForm.debitAccountId || undefined,
+        creditAccountId: expenseForm.creditAccountId || undefined,
         entries: [],
       });
       setShowExpenseForm(false);
@@ -355,6 +434,80 @@ export default function ProjectDetailPage() {
       );
     } finally {
       setSavingExpense(false);
+    }
+  }
+
+  async function submitReceipt(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingReceipt(true);
+    setReceiptError("");
+    try {
+      const amt = parseFloat(receiptForm.amount) || 0;
+      if (amt <= 0) {
+        setReceiptError("Please enter a valid received amount");
+        setSavingReceipt(false);
+        return;
+      }
+      const fullDesc = `[Payment Received] ${receiptForm.receivedFrom ? `From: ${receiptForm.receivedFrom} - ` : ""}${receiptForm.description || ""}`.trim();
+      await accountsApi.createVoucher({
+        type: "RECEIPT",
+        projectId: id,
+        amount: amt,
+        description: fullDesc,
+        voucherDate: new Date(receiptForm.voucherDate).toISOString(),
+        debitAccountId: receiptForm.debitAccountId || undefined,
+        creditAccountId: receiptForm.creditAccountId || undefined,
+        entries: [],
+      });
+      setShowReceiptForm(false);
+      setReceiptForm(emptyReceipt);
+      fetchProject();
+    } catch (err: unknown) {
+      setReceiptError(
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        "Failed to create received payment voucher"
+      );
+    } finally {
+      setSavingReceipt(false);
+    }
+  }
+
+  async function submitContra(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingContra(true);
+    setContraError("");
+    try {
+      const amt = parseFloat(contraForm.amount) || 0;
+      if (amt <= 0) {
+        setContraError("Please enter a valid contra amount");
+        setSavingContra(false);
+        return;
+      }
+      if (!contraForm.fromAccountId || !contraForm.toAccountId || contraForm.fromAccountId === contraForm.toAccountId) {
+        setContraError("Select different From and To accounts for contra entry");
+        setSavingContra(false);
+        return;
+      }
+      await accountsApi.createVoucher({
+        type: "CONTRA",
+        projectId: id,
+        amount: amt,
+        description: `[Contra] ${contraForm.description || "Cash/bank transfer"}`,
+        voucherDate: new Date(contraForm.voucherDate).toISOString(),
+        debitAccountId: contraForm.toAccountId,
+        creditAccountId: contraForm.fromAccountId,
+        entries: [],
+      });
+      setShowContraForm(false);
+      setContraForm(emptyContra);
+      fetchProject();
+    } catch (err: unknown) {
+      setContraError(
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        "Failed to create contra entry"
+      );
+    } finally {
+      setSavingContra(false);
     }
   }
 
@@ -376,12 +529,17 @@ export default function ProjectDetailPage() {
   }
 
   const projectVouchers = project?.vouchers ?? [];
-  const approvedVouchers = projectVouchers.filter((v) => v.status === "approved");
-  const pendingVouchers = projectVouchers.filter((v) => v.status === "pending");
+  const expenseVouchers = projectVouchers.filter((v) => ["PAYMENT", "JOURNAL", "ADJUSTMENT"].includes(v.type));
+  const receiptVouchers = projectVouchers.filter((v) => v.type === "RECEIPT");
+  const contraVouchers = projectVouchers.filter((v) => v.type === "CONTRA");
+  const approvedVouchers = expenseVouchers.filter((v) => v.status === "approved");
+  const pendingVouchers = expenseVouchers.filter((v) => v.status === "pending");
   const approvedExpenseSum = approvedVouchers.reduce((a, v) => a + v.amount, 0);
   const pendingExpenseSum = pendingVouchers.reduce((a, v) => a + v.amount, 0);
+  const receivedSum = receiptVouchers.reduce((a, v) => a + v.amount, 0);
+  const pendingReceiptSum = receiptVouchers.filter((v) => v.status === "pending").reduce((a, v) => a + v.amount, 0);
 
-  const filteredExpenses = projectVouchers.filter((v) => {
+  const filteredExpenses = expenseVouchers.filter((v) => {
     const matchSearch =
       (v.voucherNo || "").toLowerCase().includes(expenseSearch.toLowerCase()) ||
       (v.description || "").toLowerCase().includes(expenseSearch.toLowerCase()) ||
@@ -391,6 +549,141 @@ export default function ProjectDetailPage() {
       (v.description || "").toLowerCase().includes(`[${expenseCategoryFilter.toLowerCase()}]`);
     return matchSearch && matchCategory;
   });
+
+  const accountBookPeriod = useMemo(() => {
+    const start = parseStartDate(bookStartDate);
+    const end = parseEndDate(bookEndDate);
+    let runningBalance = 0;
+    let runningCash = 0;
+    let runningBank = 0;
+
+    const allRows = [...projectVouchers]
+      .sort((a, b) => new Date(a.voucherDate).getTime() - new Date(b.voucherDate).getTime())
+      .map((v) => {
+        const received = v.type === "RECEIPT" ? v.amount : 0;
+        const payment = ["PAYMENT", "JOURNAL", "ADJUSTMENT"].includes(v.type) ? v.amount : 0;
+        const debits = (v.ledgerEntries ?? []).filter((entry) => entry.debit > 0);
+        const credits = (v.ledgerEntries ?? []).filter((entry) => entry.credit > 0);
+        const cashIn = (v.ledgerEntries ?? [])
+          .filter((entry) => entry.account.type === "CASH")
+          .reduce((sum, entry) => sum + entry.debit, 0);
+        const cashOut = (v.ledgerEntries ?? [])
+          .filter((entry) => entry.account.type === "CASH")
+          .reduce((sum, entry) => sum + entry.credit, 0);
+        const bankIn = (v.ledgerEntries ?? [])
+          .filter((entry) => entry.account.type === "BANK")
+          .reduce((sum, entry) => sum + entry.debit, 0);
+        const bankOut = (v.ledgerEntries ?? [])
+          .filter((entry) => entry.account.type === "BANK")
+          .reduce((sum, entry) => sum + entry.credit, 0);
+        runningBalance += received - payment;
+        runningCash += cashIn - cashOut;
+        runningBank += bankIn - bankOut;
+        return {
+          ...v,
+          entryDate: new Date(v.voucherDate),
+          received,
+          payment,
+          cashIn,
+          cashOut,
+          bankIn,
+          bankOut,
+          balance: runningBalance,
+          cashBalance: runningCash,
+          bankBalance: runningBank,
+          debitAmount: debits.reduce((sum, entry) => sum + entry.debit, 0),
+          creditAmount: credits.reduce((sum, entry) => sum + entry.credit, 0),
+          debitAccounts: debits.map((entry) => `${entry.account.code} - ${entry.account.name}`).join(", "),
+          creditAccounts: credits.map((entry) => `${entry.account.code} - ${entry.account.name}`).join(", "),
+        };
+      });
+
+    const beforeRows = allRows.filter((row) => row.entryDate < start);
+    const rows = allRows.filter((row) => row.entryDate >= start && row.entryDate <= end);
+    const openingBalance = beforeRows.at(-1)?.balance ?? 0;
+    const openingCash = beforeRows.at(-1)?.cashBalance ?? 0;
+    const openingBank = beforeRows.at(-1)?.bankBalance ?? 0;
+    const periodReceived = rows.reduce((sum, row) => sum + row.received, 0);
+    const periodPayment = rows.reduce((sum, row) => sum + row.payment, 0);
+    const periodCashIn = rows.reduce((sum, row) => sum + row.cashIn, 0);
+    const periodCashOut = rows.reduce((sum, row) => sum + row.cashOut, 0);
+    const periodBankIn = rows.reduce((sum, row) => sum + row.bankIn, 0);
+    const periodBankOut = rows.reduce((sum, row) => sum + row.bankOut, 0);
+    const closingBalance = openingBalance + periodReceived - periodPayment;
+    const closingCash = openingCash + periodCashIn - periodCashOut;
+    const closingBank = openingBank + periodBankIn - periodBankOut;
+
+    const monthlySummary: {
+      month: string;
+      openingBalance: number;
+      received: number;
+      payment: number;
+      closingBalance: number;
+      cashClosing: number;
+      bankClosing: number;
+    }[] = [];
+    let carryBalance = openingBalance;
+    let carryCash = openingCash;
+    let carryBank = openingBank;
+    for (let cursor = getMonthStart(start); cursor <= end; cursor = addMonths(cursor, 1)) {
+      const monthStart = cursor < start ? start : cursor;
+      const naturalMonthEnd = getMonthEnd(cursor);
+      const monthEnd = naturalMonthEnd > end ? end : naturalMonthEnd;
+      const monthRows = rows.filter((row) => row.entryDate >= monthStart && row.entryDate <= monthEnd);
+      const receivedTotal = monthRows.reduce((sum, row) => sum + row.received, 0);
+      const paymentTotal = monthRows.reduce((sum, row) => sum + row.payment, 0);
+      const cashTotal = monthRows.reduce((sum, row) => sum + row.cashIn - row.cashOut, 0);
+      const bankTotal = monthRows.reduce((sum, row) => sum + row.bankIn - row.bankOut, 0);
+      const monthOpening = carryBalance;
+      carryBalance += receivedTotal - paymentTotal;
+      carryCash += cashTotal;
+      carryBank += bankTotal;
+      monthlySummary.push({
+        month: formatMonthLabel(cursor),
+        openingBalance: monthOpening,
+        received: receivedTotal,
+        payment: paymentTotal,
+        closingBalance: carryBalance,
+        cashClosing: carryCash,
+        bankClosing: carryBank,
+      });
+    }
+
+    return {
+      rows,
+      openingBalance,
+      openingCash,
+      openingBank,
+      periodReceived,
+      periodPayment,
+      periodCashIn,
+      periodCashOut,
+      periodBankIn,
+      periodBankOut,
+      closingBalance,
+      closingCash,
+      closingBank,
+      monthlySummary,
+    };
+  }, [bookEndDate, bookStartDate, projectVouchers]);
+
+  const accountBookRows = accountBookPeriod.rows;
+
+  function applyBookRange(mode: string) {
+    setBookRangeMode(mode);
+    const today = new Date();
+    if (mode === "month") {
+      setBookStartDate(toDateInput(getMonthStart(today)));
+      setBookEndDate(toDateInput(getMonthEnd(today)));
+    } else if (mode === "3months") {
+      setBookStartDate(toDateInput(getMonthStart(addMonths(today, -2))));
+      setBookEndDate(toDateInput(getMonthEnd(today)));
+    } else if (mode === "all") {
+      const firstVoucher = [...projectVouchers].sort((a, b) => new Date(a.voucherDate).getTime() - new Date(b.voucherDate).getTime())[0];
+      setBookStartDate(firstVoucher ? toDateInput(new Date(firstVoucher.voucherDate)) : toDateInput(getMonthStart(today)));
+      setBookEndDate(toDateInput(getMonthEnd(today)));
+    }
+  }
 
   const expenseExportColumns: ExportColumn<VoucherItem>[] = [
     { header: "Voucher No", value: (r) => r.voucherNo },
@@ -597,29 +890,47 @@ export default function ProjectDetailPage() {
       {/* ══ DASHBOARD ══════════════════════════════════════════════════════════ */}
       {tab === "Dashboard" && (
         <div className="space-y-5">
-          {/* Quick Action bar for Expenses */}
+          {/* Quick Action bar for project account entries */}
           <div className="flex items-center justify-between bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border border-amber-200 rounded-xl p-3 px-4 shadow-sm">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center">
                 <Receipt className="w-4 h-4" />
               </div>
               <div>
-                <span className="text-xs font-bold text-gray-800 block">Project Expense Quick Entry</span>
-                <span className="text-[11px] text-gray-500">Record designer fees, labour wages, materials & site expenses directly for {project.name}</span>
+                <span className="text-xs font-bold text-gray-800 block">Project Account Quick Entry</span>
+                <span className="text-[11px] text-gray-500">Record received payments and expenses directly for {project.name}</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => { setReceiptForm(emptyReceipt); setShowReceiptForm(true); }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow transition-all"
+              >
+                <ArrowDownLeft className="w-3.5 h-3.5" /> Add Received
+              </button>
+              <button
                 onClick={() => { setExpenseForm(emptyExpense); setShowExpenseForm(true); }}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg shadow transition-all"
               >
-                <Plus className="w-3.5 h-3.5" /> + Add Expense
+                <ArrowUpRight className="w-3.5 h-3.5" /> Add Expense
               </button>
               <button
                 onClick={() => setTab("Expenses")}
                 className="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-lg shadow-sm"
               >
-                Expenses Tab ({projectVouchers.length}) →
+                Expenses ({expenseVouchers.length})
+              </button>
+              <button
+                onClick={() => setTab("Account Book")}
+                className="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-lg shadow-sm"
+              >
+                Account Book ({projectVouchers.length})
+              </button>
+              <button
+                onClick={() => { setContraForm(emptyContra); setShowContraForm(true); }}
+                className="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-lg shadow-sm"
+              >
+                Contra
               </button>
             </div>
           </div>
@@ -630,7 +941,7 @@ export default function ProjectDetailPage() {
               { label: "Budget", value: budget, cls: "bg-gray-50 border-gray-200 text-gray-700", onClick: undefined },
               { label: "Cost / Expense", value: totalExpense, cls: "bg-purple-50 border-purple-200 text-purple-700 cursor-pointer hover:border-purple-400 transition-all", onClick: () => setTab("Expenses") },
               { label: "Available", value: available, cls: available >= 0 ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700", onClick: undefined },
-              { label: "Sales / Revenue", value: totalIncome, cls: "bg-teal-50 border-teal-200 text-teal-700", onClick: undefined },
+              { label: "Sales / Revenue", value: totalIncome, cls: "bg-teal-50 border-teal-200 text-teal-700 cursor-pointer hover:border-teal-400 transition-all", onClick: () => setTab("Account Book") },
               { label: "Profit / Loss", value: profit, cls: profit >= 0 ? "bg-green-50 border-green-200 text-green-700" : "bg-orange-50 border-orange-200 text-orange-700", onClick: undefined },
             ].map((m) => (
               <div key={m.label} onClick={m.onClick} className={`border rounded-xl p-4 ${m.cls}`}>
@@ -1159,7 +1470,7 @@ export default function ProjectDetailPage() {
               <tbody className="divide-y divide-gray-100">
                 {filteredExpenses.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-gray-400">
+                    <td colSpan={11} className="text-center py-12 text-gray-400">
                       No expense vouchers recorded for this project yet. Click &quot;+ Add Expense / Voucher&quot; to record your first expense.
                     </td>
                   </tr>
@@ -1223,6 +1534,288 @@ export default function ProjectDetailPage() {
                   </tr>
                 </tfoot>
               )}
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Account Book */}
+      {tab === "Account Book" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-700">Opening Balance</p>
+                <BookOpen className="w-4 h-4 text-slate-600" />
+              </div>
+              <p className={cn("text-xl font-bold mt-1", accountBookPeriod.openingBalance >= 0 ? "text-slate-900" : "text-red-700")}>{formatCurrency(accountBookPeriod.openingBalance)}</p>
+              <p className="text-[11px] text-slate-600 mt-0.5">Carried from previous period</p>
+            </div>
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-green-700">Period Received</p>
+                <ArrowDownLeft className="w-4 h-4 text-green-600" />
+              </div>
+              <p className="text-xl font-bold text-green-900 mt-1">{formatCurrency(accountBookPeriod.periodReceived)}</p>
+              <p className="text-[11px] text-green-600 mt-0.5">Selected date range</p>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-red-700">Period Payment</p>
+                <ArrowUpRight className="w-4 h-4 text-red-600" />
+              </div>
+              <p className="text-xl font-bold text-red-900 mt-1">{formatCurrency(accountBookPeriod.periodPayment)}</p>
+              <p className="text-[11px] text-red-600 mt-0.5">Selected date range</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-blue-700">Closing Balance</p>
+                <BookOpen className="w-4 h-4 text-blue-600" />
+              </div>
+              <p className={cn("text-xl font-bold mt-1", accountBookPeriod.closingBalance >= 0 ? "text-blue-900" : "text-red-700")}>
+                {formatCurrency(accountBookPeriod.closingBalance)}
+              </p>
+              <p className="text-[11px] text-blue-600 mt-0.5">Will carry to next period</p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between flex-wrap gap-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800">Project Account Book</h2>
+              <p className="text-xs text-gray-500">Opening balance, selected period movement, and closing carry-forward.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                {[
+                  ["month", "1 Month"],
+                  ["3months", "3 Months"],
+                  ["all", "All"],
+                  ["custom", "Custom"],
+                ].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => applyBookRange(mode)}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold border-r border-gray-200 last:border-r-0",
+                      bookRangeMode === mode ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="date"
+                value={bookStartDate}
+                onChange={(e) => { setBookRangeMode("custom"); setBookStartDate(e.target.value); }}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg"
+              />
+              <input
+                type="date"
+                value={bookEndDate}
+                onChange={(e) => { setBookRangeMode("custom"); setBookEndDate(e.target.value); }}
+                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg"
+              />
+              <button
+                onClick={() => { setReceiptForm(emptyReceipt); setShowReceiptForm(true); }}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm"
+              >
+                <ArrowDownLeft className="w-4 h-4" /> Add Received
+              </button>
+              <button
+                onClick={() => { setExpenseForm(emptyExpense); setShowExpenseForm(true); }}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg shadow-sm"
+              >
+                <ArrowUpRight className="w-4 h-4" /> Add Expense
+              </button>
+              <button
+                onClick={() => { setContraForm(emptyContra); setShowContraForm(true); }}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-gray-900 hover:bg-gray-800 text-white text-xs font-bold rounded-lg shadow-sm"
+              >
+                <BookOpen className="w-4 h-4" /> Contra Entry
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-900 text-white">
+                  <th className="px-4 py-3 text-left font-semibold">DATE</th>
+                  <th className="px-4 py-3 text-left font-semibold">VOUCHER NO</th>
+                  <th className="px-4 py-3 text-left font-semibold">TYPE</th>
+                  <th className="px-4 py-3 text-left font-semibold">PARTICULARS</th>
+                  <th className="px-4 py-3 text-right font-semibold">CASH +</th>
+                  <th className="px-4 py-3 text-right font-semibold">CASH -</th>
+                  <th className="px-4 py-3 text-right font-semibold">BANK +</th>
+                  <th className="px-4 py-3 text-right font-semibold">BANK -</th>
+                  <th className="px-4 py-3 text-left font-semibold">DEBIT ACCOUNT</th>
+                  <th className="px-4 py-3 text-left font-semibold">CREDIT ACCOUNT</th>
+                  <th className="px-4 py-3 text-right font-semibold">DEBIT</th>
+                  <th className="px-4 py-3 text-right font-semibold">CREDIT</th>
+                  <th className="px-4 py-3 text-right font-semibold">BALANCE</th>
+                  <th className="px-4 py-3 text-center font-semibold">STATUS</th>
+                  <th className="px-4 py-3 text-center font-semibold">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                <tr className="bg-slate-50 font-semibold text-slate-800">
+                  <td className="px-4 py-2.5">{formatDate(bookStartDate)}</td>
+                  <td className="px-4 py-2.5">-</td>
+                  <td className="px-4 py-2.5">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">OPENING</span>
+                  </td>
+                  <td className="px-4 py-2.5">Balance brought forward</td>
+                  <td className="px-4 py-2.5 text-right">{accountBookPeriod.openingCash > 0 ? formatCurrency(accountBookPeriod.openingCash) : "-"}</td>
+                  <td className="px-4 py-2.5 text-right">{accountBookPeriod.openingCash < 0 ? formatCurrency(Math.abs(accountBookPeriod.openingCash)) : "-"}</td>
+                  <td className="px-4 py-2.5 text-right">{accountBookPeriod.openingBank > 0 ? formatCurrency(accountBookPeriod.openingBank) : "-"}</td>
+                  <td className="px-4 py-2.5 text-right">{accountBookPeriod.openingBank < 0 ? formatCurrency(Math.abs(accountBookPeriod.openingBank)) : "-"}</td>
+                  <td className="px-4 py-2.5">-</td>
+                  <td className="px-4 py-2.5">-</td>
+                  <td className="px-4 py-2.5 text-right">-</td>
+                  <td className="px-4 py-2.5 text-right">-</td>
+                  <td className={cn("px-4 py-2.5 text-right font-extrabold", accountBookPeriod.openingBalance >= 0 ? "text-slate-900" : "text-red-700")}>
+                    {formatCurrency(accountBookPeriod.openingBalance)}
+                  </td>
+                  <td className="px-4 py-2.5 text-center">-</td>
+                  <td className="px-4 py-2.5 text-center">-</td>
+                </tr>
+                {accountBookRows.length === 0 && (
+                  <tr>
+                    <td colSpan={15} className="text-center py-12 text-gray-400">
+                      No transactions found in this selected period.
+                    </td>
+                  </tr>
+                )}
+                {accountBookRows.map((v) => (
+                  <tr key={v.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-2.5 text-gray-600">{formatDate(v.voucherDate)}</td>
+                    <td className="px-4 py-2.5 font-mono font-semibold text-gray-800">{v.voucherNo}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded text-[10px] font-semibold border",
+                        v.type === "RECEIPT" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"
+                      )}>
+                        {v.type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 font-medium text-gray-800 max-w-sm truncate" title={v.description}>
+                      {v.description || "-"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-bold text-green-700">
+                      {v.cashIn ? formatCurrency(v.cashIn) : "-"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-bold text-red-600">
+                      {v.cashOut ? formatCurrency(v.cashOut) : "-"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-bold text-green-700">
+                      {v.bankIn ? formatCurrency(v.bankIn) : "-"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-bold text-red-600">
+                      {v.bankOut ? formatCurrency(v.bankOut) : "-"}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-700 max-w-xs truncate" title={v.debitAccounts}>
+                      {v.debitAccounts || "-"}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-700 max-w-xs truncate" title={v.creditAccounts}>
+                      {v.creditAccounts || "-"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-bold text-blue-700">
+                      {v.debitAmount ? formatCurrency(v.debitAmount) : "-"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-bold text-amber-700">
+                      {v.creditAmount ? formatCurrency(v.creditAmount) : "-"}
+                    </td>
+                    <td className={cn("px-4 py-2.5 text-right font-extrabold", v.balance >= 0 ? "text-gray-900" : "text-red-700")}>
+                      {formatCurrency(v.balance)}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-full text-[10px] font-bold",
+                        v.status === "approved" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+                      )}>
+                        {v.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        {v.status === "pending" && (
+                          <button
+                            onClick={() => approveExpense(v.id)}
+                            className="flex items-center gap-1 text-[11px] px-2 py-0.5 bg-green-50 text-green-700 rounded hover:bg-green-100 font-semibold"
+                          >
+                            <CheckCircle className="w-3 h-3" /> Approve
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteExpense(v.id)}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded"
+                          title="Delete Voucher"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                <tr className="bg-blue-50 font-bold text-blue-900 border-t border-blue-200">
+                  <td className="px-4 py-3">{formatDate(bookEndDate)}</td>
+                  <td className="px-4 py-3">-</td>
+                  <td className="px-4 py-3">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">CLOSING</span>
+                  </td>
+                  <td className="px-4 py-3">Balance carried forward</td>
+                  <td className="px-4 py-3 text-right">{accountBookPeriod.closingCash > 0 ? formatCurrency(accountBookPeriod.closingCash) : "-"}</td>
+                  <td className="px-4 py-3 text-right">{accountBookPeriod.closingCash < 0 ? formatCurrency(Math.abs(accountBookPeriod.closingCash)) : "-"}</td>
+                  <td className="px-4 py-3 text-right">{accountBookPeriod.closingBank > 0 ? formatCurrency(accountBookPeriod.closingBank) : "-"}</td>
+                  <td className="px-4 py-3 text-right">{accountBookPeriod.closingBank < 0 ? formatCurrency(Math.abs(accountBookPeriod.closingBank)) : "-"}</td>
+                  <td className="px-4 py-3">-</td>
+                  <td className="px-4 py-3">-</td>
+                  <td className="px-4 py-3 text-right">{formatCurrency(accountBookPeriod.periodReceived)}</td>
+                  <td className="px-4 py-3 text-right">{formatCurrency(accountBookPeriod.periodPayment)}</td>
+                  <td className={cn("px-4 py-3 text-right font-extrabold", accountBookPeriod.closingBalance >= 0 ? "text-blue-900" : "text-red-700")}>
+                    {formatCurrency(accountBookPeriod.closingBalance)}
+                  </td>
+                  <td className="px-4 py-3 text-center">-</td>
+                  <td className="px-4 py-3 text-center">-</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-800">Monthly Carry Summary</h3>
+              <p className="text-xs text-gray-500">Each month closes and carries forward to the next month.</p>
+            </div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700">
+                  <th className="px-4 py-3 text-left font-semibold">MONTH</th>
+                  <th className="px-4 py-3 text-right font-semibold">OPENING</th>
+                  <th className="px-4 py-3 text-right font-semibold">RECEIVED</th>
+                  <th className="px-4 py-3 text-right font-semibold">PAYMENT</th>
+                  <th className="px-4 py-3 text-right font-semibold">CLOSING</th>
+                  <th className="px-4 py-3 text-right font-semibold">CASH CLOSING</th>
+                  <th className="px-4 py-3 text-right font-semibold">BANK CLOSING</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {accountBookPeriod.monthlySummary.map((month) => (
+                  <tr key={month.month} className="hover:bg-slate-50">
+                    <td className="px-4 py-2.5 font-semibold text-gray-800">{month.month}</td>
+                    <td className="px-4 py-2.5 text-right">{formatCurrency(month.openingBalance)}</td>
+                    <td className="px-4 py-2.5 text-right text-green-700 font-semibold">{formatCurrency(month.received)}</td>
+                    <td className="px-4 py-2.5 text-right text-red-600 font-semibold">{formatCurrency(month.payment)}</td>
+                    <td className={cn("px-4 py-2.5 text-right font-extrabold", month.closingBalance >= 0 ? "text-gray-900" : "text-red-700")}>
+                      {formatCurrency(month.closingBalance)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">{formatCurrency(month.cashClosing)}</td>
+                    <td className="px-4 py-2.5 text-right">{formatCurrency(month.bankClosing)}</td>
+                  </tr>
+                ))}
+              </tbody>
             </table>
           </div>
         </div>
@@ -2038,6 +2631,210 @@ export default function ProjectDetailPage() {
           </div>
         </div>
       )}
+      {/* Contra Entry Form Modal */}
+      {showContraForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-900/10 rounded-t-2xl">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-gray-800" /> Contra Entry
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Project: <span className="font-semibold text-gray-800">{project.name}</span></p>
+              </div>
+              <button onClick={() => { setShowContraForm(false); setContraError(""); }}>
+                <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+              </button>
+            </div>
+            <form onSubmit={submitContra} className="p-6 space-y-4">
+              {contraError && (
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                  {contraError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <Inp
+                  label="Amount *"
+                  type="number"
+                  min="1"
+                  required
+                  placeholder="e.g. 100000"
+                  value={contraForm.amount}
+                  onChange={(e) => setContraForm({ ...contraForm, amount: e.target.value })}
+                />
+                <Inp
+                  label="Date *"
+                  type="date"
+                  required
+                  value={contraForm.voucherDate}
+                  onChange={(e) => setContraForm({ ...contraForm, voucherDate: e.target.value })}
+                />
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">From Account (Credit) *</label>
+                  <select
+                    required
+                    value={contraForm.fromAccountId}
+                    onChange={(e) => setContraForm({ ...contraForm, fromAccountId: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 bg-white"
+                  >
+                    <option value="">Select source account</option>
+                    {accounts.filter((account) => ["CASH", "BANK"].includes(account.type)).map((account) => (
+                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">To Account (Debit) *</label>
+                  <select
+                    required
+                    value={contraForm.toAccountId}
+                    onChange={(e) => setContraForm({ ...contraForm, toAccountId: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 bg-white"
+                  >
+                    <option value="">Select destination account</option>
+                    {accounts.filter((account) => ["CASH", "BANK"].includes(account.type)).map((account) => (
+                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Description / Remarks</label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Cash deposited to bank"
+                    value={contraForm.description}
+                    onChange={(e) => setContraForm({ ...contraForm, description: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => { setShowContraForm(false); setContraError(""); }}
+                  className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingContra}
+                  className="px-5 py-2 text-sm bg-gray-900 hover:bg-gray-800 disabled:bg-gray-400 text-white rounded-lg font-bold flex items-center gap-2 shadow-sm"
+                >
+                  {savingContra && <Loader2 className="w-4 h-4 animate-spin" />} Save Contra
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Payment Received Form Modal */}
+      {showReceiptForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-green-500/10 rounded-t-2xl">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                  <ArrowDownLeft className="w-5 h-5 text-green-600" /> Add Payment Received
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Project: <span className="font-semibold text-gray-800">{project.name}</span></p>
+              </div>
+              <button onClick={() => { setShowReceiptForm(false); setReceiptError(""); }}>
+                <X className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+              </button>
+            </div>
+            <form onSubmit={submitReceipt} className="p-6 space-y-4">
+              {receiptError && (
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                  {receiptError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <Inp
+                  label="Amount *"
+                  type="number"
+                  min="1"
+                  required
+                  placeholder="e.g. 500000"
+                  value={receiptForm.amount}
+                  onChange={(e) => setReceiptForm({ ...receiptForm, amount: e.target.value })}
+                />
+                <Inp
+                  label="Date *"
+                  type="date"
+                  required
+                  value={receiptForm.voucherDate}
+                  onChange={(e) => setReceiptForm({ ...receiptForm, voucherDate: e.target.value })}
+                />
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Debit Account</label>
+                  <select
+                    value={receiptForm.debitAccountId}
+                    onChange={(e) => setReceiptForm({ ...receiptForm, debitAccountId: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 bg-white"
+                  >
+                    <option value="">Auto cash/bank</option>
+                    {accounts.filter((account) => ["CASH", "BANK", "ASSET"].includes(account.type)).map((account) => (
+                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Credit Account</label>
+                  <select
+                    value={receiptForm.creditAccountId}
+                    onChange={(e) => setReceiptForm({ ...receiptForm, creditAccountId: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 bg-white"
+                  >
+                    <option value="">Auto income head</option>
+                    {accounts.filter((account) => account.type === "INCOME" || account.type === "LIABILITY").map((account) => (
+                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <Inp
+                    label="Received From"
+                    placeholder="e.g. Customer / Land owner / investor name"
+                    value={receiptForm.receivedFrom}
+                    onChange={(e) => setReceiptForm({ ...receiptForm, receivedFrom: e.target.value })}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Description / Remarks</label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Booking money received by cash / bank"
+                    value={receiptForm.description}
+                    onChange={(e) => setReceiptForm({ ...receiptForm, description: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => { setShowReceiptForm(false); setReceiptError(""); }}
+                  className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingReceipt}
+                  className="px-5 py-2 text-sm bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-lg font-bold flex items-center gap-2 shadow-sm"
+                >
+                  {savingReceipt && <Loader2 className="w-4 h-4 animate-spin" />} Save Received
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       {/* Expense Form Modal */}
       {showExpenseForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -2088,6 +2885,34 @@ export default function ProjectDetailPage() {
                     <option value="PAYMENT">Payment Voucher</option>
                     <option value="JOURNAL">Journal Voucher</option>
                     <option value="ADJUSTMENT">Adjustment Voucher</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Debit Account</label>
+                  <select
+                    value={expenseForm.debitAccountId}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, debitAccountId: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  >
+                    <option value="">Auto expense head</option>
+                    {accounts.filter((account) => account.type === "EXPENSE" || account.type === "ASSET").map((account) => (
+                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Credit Account</label>
+                  <select
+                    value={expenseForm.creditAccountId}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, creditAccountId: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  >
+                    <option value="">Auto cash/bank</option>
+                    {accounts.filter((account) => ["CASH", "BANK", "LIABILITY"].includes(account.type)).map((account) => (
+                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                    ))}
                   </select>
                 </div>
 
