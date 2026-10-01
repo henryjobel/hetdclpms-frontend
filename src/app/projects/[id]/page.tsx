@@ -81,7 +81,10 @@ interface User { id: string; name: string; email: string; }
 interface Account { id: string; code: string; name: string; type: string; }
 
 function toDateInput(date: Date) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function getMonthStart(date = new Date()) {
