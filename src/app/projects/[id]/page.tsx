@@ -49,6 +49,8 @@ interface VoucherItem {
   status: string;
   voucherDate: string;
   createdBy?: { name: string };
+  boqItem?: { id: string; description: string; phase?: string; subcategory?: string };
+  boqCostType?: "material" | "labor";
   ledgerEntries?: {
     id: string;
     debit: number;
@@ -206,6 +208,8 @@ export default function ProjectDetailPage() {
     voucherDate: new Date().toISOString().slice(0, 10),
     debitAccountId: "",
     creditAccountId: "",
+    boqItemId: "",
+    boqCostType: "material",
   };
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [expenseForm, setExpenseForm] = useState(emptyExpense);
@@ -425,6 +429,8 @@ export default function ProjectDetailPage() {
         voucherDate: new Date(expenseForm.voucherDate).toISOString(),
         debitAccountId: expenseForm.debitAccountId || undefined,
         creditAccountId: expenseForm.creditAccountId || undefined,
+        boqItemId: expenseForm.boqItemId || undefined,
+        boqCostType: expenseForm.boqItemId ? expenseForm.boqCostType : undefined,
         entries: [],
       });
       setShowExpenseForm(false);
@@ -681,6 +687,7 @@ export default function ProjectDetailPage() {
     { header: "Voucher No", value: (row) => row.voucherNo },
     { header: "Type", value: (row) => row.type },
     { header: "Particulars", value: (row) => row.description || "-" },
+    { header: "BOQ Item", value: (row) => row.boqItem?.description || "Not linked" },
     { header: "Cash In", value: (row) => row.cashIn || "" },
     { header: "Cash Out", value: (row) => row.cashOut || "" },
     { header: "Bank In", value: (row) => row.bankIn || "" },
@@ -722,6 +729,7 @@ export default function ProjectDetailPage() {
     { header: "Voucher No", value: (r) => r.voucherNo },
     { header: "Date", value: (r) => formatDate(r.voucherDate) },
     { header: "Type", value: (r) => r.type },
+    { header: "BOQ Item", value: (r) => r.boqItem?.description || "Not linked" },
     { header: "Description", value: (r) => r.description || "—" },
     { header: "Amount (৳)", value: (r) => r.amount },
     { header: "Status", value: (r) => r.status },
@@ -1494,6 +1502,7 @@ export default function ProjectDetailPage() {
                   <th className="px-4 py-3 text-left font-semibold">DATE</th>
                   <th className="px-4 py-3 text-left font-semibold">TYPE</th>
                   <th className="px-4 py-3 text-left font-semibold">CATEGORY & DESCRIPTION</th>
+                  <th className="px-4 py-3 text-left font-semibold">BOQ ITEM</th>
                   <th className="px-4 py-3 text-left font-semibold">CREATED BY</th>
                   <th className="px-4 py-3 text-right font-semibold">AMOUNT (৳)</th>
                   <th className="px-4 py-3 text-center font-semibold">STATUS</th>
@@ -1520,6 +1529,9 @@ export default function ProjectDetailPage() {
                     </td>
                     <td className="px-4 py-2.5 font-medium text-gray-800 max-w-xs truncate" title={v.description}>
                       {v.description || "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-600 max-w-xs truncate" title={v.boqItem?.description}>
+                      {v.boqItem ? `${v.boqItem.phase ? `${v.boqItem.phase} - ` : ""}${v.boqItem.description}` : "Not linked"}
                     </td>
                     <td className="px-4 py-2.5 text-gray-500">{v.createdBy?.name || "System"}</td>
                     <td className="px-4 py-2.5 text-right font-bold text-gray-900">
@@ -1745,6 +1757,7 @@ export default function ProjectDetailPage() {
                     </td>
                     <td className="px-3 py-2.5 font-medium text-gray-800" title={v.description}>
                       <span className="block max-w-[240px] truncate">{v.description || "-"}</span>
+                      {v.boqItem && <span className="block max-w-[240px] truncate text-[10px] font-semibold text-indigo-600">BOQ: {v.boqItem.description}</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right font-bold text-green-700">
                       {v.cashIn ? formatCurrency(v.cashIn) : "-"}
@@ -2906,7 +2919,11 @@ export default function ProjectDetailPage() {
                   <label className="block text-xs font-medium text-gray-700 mb-1">Expense Category *</label>
                   <select
                     value={expenseForm.category}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                    onChange={(e) => setExpenseForm({
+                      ...expenseForm,
+                      category: e.target.value,
+                      boqCostType: ["Labour", "Contractor"].includes(e.target.value) ? "labor" : "material",
+                    })}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
                   >
                     <option value="Material">🧱 Material / Construction কাঁচামাল</option>
@@ -2930,6 +2947,33 @@ export default function ProjectDetailPage() {
                     <option value="JOURNAL">Journal Voucher</option>
                     <option value="ADJUSTMENT">Adjustment Voucher</option>
                   </select>
+                </div>
+
+                <div className="col-span-2 border-t border-gray-100 pt-3">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Link to BOQ Item (optional)</label>
+                  <select
+                    value={expenseForm.boqItemId}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, boqItemId: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  >
+                    <option value="">No BOQ link</option>
+                    {boqItems.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.phase ? `${item.phase} - ` : ""}{item.description}
+                      </option>
+                    ))}
+                  </select>
+                  {expenseForm.boqItemId && (
+                    <select
+                      value={expenseForm.boqCostType}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, boqCostType: e.target.value })}
+                      className="mt-2 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                    >
+                      <option value="material">Apply as material actual cost</option>
+                      <option value="labor">Apply as labour actual cost</option>
+                    </select>
+                  )}
+                  <p className="mt-1 text-[11px] text-gray-500">This payment will increase the selected BOQ item&apos;s actual cost.</p>
                 </div>
 
                 <div>
