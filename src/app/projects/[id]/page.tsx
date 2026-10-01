@@ -5,7 +5,7 @@ import Link from "next/link";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useAuth } from "@/contexts/auth-context";
 import { projectsApi, usersApi, accountsApi } from "@/lib/api";
-import { confirmAction, showToast } from "@/lib/feedback";
+import { confirmAction } from "@/lib/feedback";
 import { exportRowsToPdf, exportRowsToXlsx, type ExportColumn } from "@/lib/export-utils";
 import {
   AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip,
@@ -14,7 +14,7 @@ import {
 import {
   Plus, Pencil, Trash2, X, Loader2,
   FileSpreadsheet, FileDown, ArrowLeft,
-  DollarSign, Receipt, CheckCircle, Clock,
+  DollarSign, Receipt, CheckCircle,
   FolderTree, Layers, ChevronDown, ChevronRight,
   ArrowDownLeft, ArrowUpRight, BookOpen,
 } from "lucide-react";
@@ -520,19 +520,6 @@ export default function ProjectDetailPage() {
     }
   }
 
-  async function approveExpense(voucherId: string) {
-    try {
-      await accountsApi.approveVoucher(voucherId);
-      fetchProject();
-    } catch (err: unknown) {
-      showToast(
-        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-        "Failed to approve voucher",
-        "error"
-      );
-    }
-  }
-
   async function deleteExpense(voucherId: string) {
     if (!(await confirmAction("Delete this expense voucher?"))) return;
     try {
@@ -543,14 +530,7 @@ export default function ProjectDetailPage() {
 
   const projectVouchers = project?.vouchers ?? [];
   const expenseVouchers = projectVouchers.filter((v) => ["PAYMENT", "JOURNAL", "ADJUSTMENT"].includes(v.type));
-  const receiptVouchers = projectVouchers.filter((v) => v.type === "RECEIPT");
-  const contraVouchers = projectVouchers.filter((v) => v.type === "CONTRA");
-  const approvedVouchers = expenseVouchers.filter((v) => v.status === "approved");
-  const pendingVouchers = expenseVouchers.filter((v) => v.status === "pending");
-  const approvedExpenseSum = approvedVouchers.reduce((a, v) => a + v.amount, 0);
-  const pendingExpenseSum = pendingVouchers.reduce((a, v) => a + v.amount, 0);
-  const receivedSum = receiptVouchers.reduce((a, v) => a + v.amount, 0);
-  const pendingReceiptSum = receiptVouchers.filter((v) => v.status === "pending").reduce((a, v) => a + v.amount, 0);
+  const boqLinkedExpenseCount = expenseVouchers.filter((v) => v.boqItem).length;
 
   const filteredExpenses = expenseVouchers.filter((v) => {
     const matchSearch =
@@ -695,7 +675,6 @@ export default function ProjectDetailPage() {
     { header: "Debit", value: (row) => row.debitAmount || "" },
     { header: "Credit", value: (row) => row.creditAmount || "" },
     { header: "Balance", value: (row) => row.balance },
-    { header: "Status", value: (row) => row.status },
   ];
 
   function downloadAccountBookPdf() {
@@ -732,7 +711,6 @@ export default function ProjectDetailPage() {
     { header: "BOQ Item", value: (r) => r.boqItem?.description || "Not linked" },
     { header: "Description", value: (r) => r.description || "—" },
     { header: "Amount (৳)", value: (r) => r.amount },
-    { header: "Status", value: (r) => r.status },
   ];
 
   function exportExpenses(format: "xlsx" | "pdf") {
@@ -1417,20 +1395,20 @@ export default function ProjectDetailPage() {
 
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-green-700">Approved Expenses</p>
+                <p className="text-xs font-semibold text-green-700">Recorded Expenses</p>
                 <CheckCircle className="w-4 h-4 text-green-600" />
               </div>
-              <p className="text-xl font-bold text-green-900 mt-1">৳{formatCurrency(approvedExpenseSum)}</p>
-              <p className="text-[11px] text-green-600 mt-0.5">{approvedVouchers.length} vouchers posted</p>
+              <p className="text-xl font-bold text-green-900 mt-1">৳{formatCurrency(totalExpense)}</p>
+              <p className="text-[11px] text-green-600 mt-0.5">{expenseVouchers.length} vouchers recorded</p>
             </div>
 
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-amber-700">Pending Approval</p>
-                <Clock className="w-4 h-4 text-amber-600" />
+                <p className="text-xs font-semibold text-amber-700">BOQ Linked</p>
+                <CheckCircle className="w-4 h-4 text-amber-600" />
               </div>
-              <p className="text-xl font-bold text-amber-900 mt-1">৳{formatCurrency(pendingExpenseSum)}</p>
-              <p className="text-[11px] text-amber-600 mt-0.5">{pendingVouchers.length} vouchers pending</p>
+              <p className="text-xl font-bold text-amber-900 mt-1">{boqLinkedExpenseCount}</p>
+              <p className="text-[11px] text-amber-600 mt-0.5">expenses mapped to BOQ</p>
             </div>
 
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
@@ -1505,14 +1483,13 @@ export default function ProjectDetailPage() {
                   <th className="px-4 py-3 text-left font-semibold">BOQ ITEM</th>
                   <th className="px-4 py-3 text-left font-semibold">CREATED BY</th>
                   <th className="px-4 py-3 text-right font-semibold">AMOUNT (৳)</th>
-                  <th className="px-4 py-3 text-center font-semibold">STATUS</th>
                   <th className="px-4 py-3 text-center font-semibold">ACTIONS</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredExpenses.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="text-center py-12 text-gray-400">
+                    <td colSpan={9} className="text-center py-12 text-gray-400">
                       No expense vouchers recorded for this project yet. Click &quot;+ Add Expense / Voucher&quot; to record your first expense.
                     </td>
                   </tr>
@@ -1538,24 +1515,7 @@ export default function ProjectDetailPage() {
                       ৳{formatCurrency(v.amount)}
                     </td>
                     <td className="px-4 py-2.5 text-center">
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-full text-[10px] font-bold",
-                        v.status === "approved" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-                      )}>
-                        {v.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        {v.status === "pending" && (
-                          <button
-                            onClick={() => approveExpense(v.id)}
-                            className="flex items-center gap-1 text-[11px] px-2 py-0.5 bg-green-50 text-green-700 rounded hover:bg-green-100 font-semibold"
-                            title="Approve Voucher"
-                          >
-                            <CheckCircle className="w-3 h-3" /> Approve
-                          </button>
-                        )}
                         <button
                           onClick={() => deleteExpense(v.id)}
                           className="p-1 text-red-500 hover:bg-red-50 rounded"
@@ -1710,7 +1670,6 @@ export default function ProjectDetailPage() {
                   <th className="w-[86px] px-2.5 py-3 text-right font-semibold">DEBIT</th>
                   <th className="w-[86px] px-2.5 py-3 text-right font-semibold">CREDIT</th>
                   <th className="w-[92px] px-2.5 py-3 text-right font-semibold">BALANCE</th>
-                  <th className="w-[86px] px-2.5 py-3 text-center font-semibold">STATUS</th>
                   <th className="w-[110px] px-2.5 py-3 text-center font-semibold">ACTIONS</th>
                 </tr>
               </thead>
@@ -1734,11 +1693,10 @@ export default function ProjectDetailPage() {
                     {formatCurrency(accountBookPeriod.openingBalance)}
                   </td>
                   <td className="px-4 py-2.5 text-center">-</td>
-                  <td className="px-4 py-2.5 text-center">-</td>
                 </tr>
                 {accountBookRows.length === 0 && (
                   <tr>
-                    <td colSpan={15} className="text-center py-12 text-gray-400">
+                    <td colSpan={14} className="text-center py-12 text-gray-400">
                       No transactions found in this selected period.
                     </td>
                   </tr>
@@ -1787,23 +1745,7 @@ export default function ProjectDetailPage() {
                       {formatCurrency(v.balance)}
                     </td>
                     <td className="px-4 py-2.5 text-center">
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-full text-[10px] font-bold",
-                        v.status === "approved" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-                      )}>
-                        {v.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        {v.status === "pending" && (
-                          <button
-                            onClick={() => approveExpense(v.id)}
-                            className="flex items-center gap-1 text-[11px] px-2 py-0.5 bg-green-50 text-green-700 rounded hover:bg-green-100 font-semibold"
-                          >
-                            <CheckCircle className="w-3 h-3" /> Approve
-                          </button>
-                        )}
                         <button
                           onClick={() => deleteExpense(v.id)}
                           className="p-1 text-red-500 hover:bg-red-50 rounded"
@@ -1833,7 +1775,6 @@ export default function ProjectDetailPage() {
                   <td className={cn("px-4 py-3 text-right font-extrabold", accountBookPeriod.closingBalance >= 0 ? "text-blue-900" : "text-red-700")}>
                     {formatCurrency(accountBookPeriod.closingBalance)}
                   </td>
-                  <td className="px-4 py-3 text-center">-</td>
                   <td className="px-4 py-3 text-center">-</td>
                 </tr>
               </tbody>
