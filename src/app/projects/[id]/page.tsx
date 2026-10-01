@@ -683,6 +683,10 @@ export default function ProjectDetailPage() {
       filename: `${project.name}-account-book`,
       title: `${project.name} - Account Book`,
       subtitle: `${formatDate(bookStartDate)} to ${formatDate(bookEndDate)}`,
+      summary: [
+        `Opening: ${formatCurrency(accountBookPeriod.openingBalance)} | Received: ${formatCurrency(accountBookPeriod.periodReceived)} | Payment: ${formatCurrency(accountBookPeriod.periodPayment)} | Closing: ${formatCurrency(accountBookPeriod.closingBalance)}`,
+        `Cash Closing: ${formatCurrency(accountBookPeriod.closingCash)} | Bank Closing: ${formatCurrency(accountBookPeriod.closingBank)}`,
+      ],
       columns: accountBookExportColumns,
       rows: accountBookRows,
     });

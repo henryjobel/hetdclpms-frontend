@@ -90,6 +90,7 @@ export function exportRowsToPdf<T>(options: {
   filename: string;
   title: string;
   subtitle?: string;
+  summary?: string[];
   columns: ExportColumn<T>[];
   rows: T[];
 }) {
@@ -101,7 +102,8 @@ export function exportRowsToPdf<T>(options: {
   const tableWidth = pageWidth - margin * 2;
   const colWidth = tableWidth / Math.max(1, options.columns.length);
   const maxCellChars = Math.max(8, Math.floor(colWidth / 4.8));
-  const rowsPerPage = Math.max(1, Math.floor((pageHeight - 130) / rowHeight));
+  const summaryHeight = options.summary?.length ? options.summary.length * 12 + 8 : 0;
+  const rowsPerPage = Math.max(1, Math.floor((pageHeight - 130 - summaryHeight) / rowHeight));
   const pages: T[][] = [];
 
   for (let i = 0; i < Math.max(1, options.rows.length); i += rowsPerPage) {
@@ -122,7 +124,12 @@ export function exportRowsToPdf<T>(options: {
     commands.push(`BT /F1 8 Tf ${margin} ${headerY - 16} Td (${pdfText(options.subtitle ?? `Generated ${new Date().toLocaleString()}`)}) Tj ET`);
     commands.push(`BT /F1 8 Tf ${pageWidth - margin - 86} ${headerY - 16} Td (Page ${pageIndex + 1} of ${pages.length}) Tj ET`);
 
-    const startY = headerY - 45;
+    const pageSummary = pageIndex === 0 ? (options.summary ?? []) : [];
+    pageSummary.forEach((line, index) => {
+      commands.push(`BT /F1 8 Tf ${margin} ${headerY - 31 - index * 12} Td (${pdfText(line)}) Tj ET`);
+    });
+
+    const startY = headerY - 45 - (pageIndex === 0 ? summaryHeight : 0);
     commands.push("0.92 0.94 0.97 rg");
     commands.push(`${margin} ${startY - 4} ${tableWidth} 18 re f`);
     commands.push("0.2 0.2 0.2 rg");
