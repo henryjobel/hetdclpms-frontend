@@ -5,7 +5,7 @@ import Link from "next/link";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useAuth } from "@/contexts/auth-context";
 import { projectsApi, usersApi, accountsApi } from "@/lib/api";
-import { confirmAction } from "@/lib/feedback";
+import { confirmAction, showToast } from "@/lib/feedback";
 import { exportRowsToPdf, exportRowsToXlsx, type ExportColumn } from "@/lib/export-utils";
 import {
   AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip,
@@ -516,7 +516,11 @@ export default function ProjectDetailPage() {
       await accountsApi.approveVoucher(voucherId);
       fetchProject();
     } catch (err: unknown) {
-      alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Failed to approve voucher");
+      showToast(
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        "Failed to approve voucher",
+        "error"
+      );
     }
   }
 
@@ -668,6 +672,32 @@ export default function ProjectDetailPage() {
   }, [bookEndDate, bookStartDate, projectVouchers]);
 
   const accountBookRows = accountBookPeriod.rows;
+
+  const accountBookExportColumns: ExportColumn<(typeof accountBookRows)[number]>[] = [
+    { header: "Date", value: (row) => formatDate(row.voucherDate) },
+    { header: "Voucher No", value: (row) => row.voucherNo },
+    { header: "Type", value: (row) => row.type },
+    { header: "Particulars", value: (row) => row.description || "-" },
+    { header: "Cash In", value: (row) => row.cashIn || "" },
+    { header: "Cash Out", value: (row) => row.cashOut || "" },
+    { header: "Bank In", value: (row) => row.bankIn || "" },
+    { header: "Bank Out", value: (row) => row.bankOut || "" },
+    { header: "Debit", value: (row) => row.debitAmount || "" },
+    { header: "Credit", value: (row) => row.creditAmount || "" },
+    { header: "Balance", value: (row) => row.balance },
+    { header: "Status", value: (row) => row.status },
+  ];
+
+  function downloadAccountBookPdf() {
+    if (!project) return;
+    exportRowsToPdf({
+      filename: `${project.name}-account-book`,
+      title: `${project.name} - Account Book`,
+      subtitle: `${formatDate(bookStartDate)} to ${formatDate(bookEndDate)}`,
+      columns: accountBookExportColumns,
+      rows: accountBookRows,
+    });
+  }
 
   function applyBookRange(mode: string) {
     setBookRangeMode(mode);
@@ -1618,6 +1648,15 @@ export default function ProjectDetailPage() {
                 className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg"
               />
               <button
+                type="button"
+                onClick={downloadAccountBookPdf}
+                disabled={accountBookRows.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-sm"
+                title="Download the selected account book period as PDF"
+              >
+                <FileDown className="w-4 h-4" /> Download PDF
+              </button>
+              <button
                 onClick={() => { setReceiptForm(emptyReceipt); setShowReceiptForm(true); }}
                 className="flex items-center gap-1.5 px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm"
               >
@@ -1639,24 +1678,25 @@ export default function ProjectDetailPage() {
           </div>
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-            <table className="w-full text-xs">
+            <div className="overflow-x-auto overscroll-x-contain">
+            <table className="w-full min-w-[1480px] table-fixed text-xs">
               <thead>
                 <tr className="bg-gray-900 text-white">
-                  <th className="px-4 py-3 text-left font-semibold">DATE</th>
-                  <th className="px-4 py-3 text-left font-semibold">VOUCHER NO</th>
-                  <th className="px-4 py-3 text-left font-semibold">TYPE</th>
-                  <th className="px-4 py-3 text-left font-semibold">PARTICULARS</th>
-                  <th className="px-4 py-3 text-right font-semibold">CASH +</th>
-                  <th className="px-4 py-3 text-right font-semibold">CASH -</th>
-                  <th className="px-4 py-3 text-right font-semibold">BANK +</th>
-                  <th className="px-4 py-3 text-right font-semibold">BANK -</th>
-                  <th className="px-4 py-3 text-left font-semibold">DEBIT ACCOUNT</th>
-                  <th className="px-4 py-3 text-left font-semibold">CREDIT ACCOUNT</th>
-                  <th className="px-4 py-3 text-right font-semibold">DEBIT</th>
-                  <th className="px-4 py-3 text-right font-semibold">CREDIT</th>
-                  <th className="px-4 py-3 text-right font-semibold">BALANCE</th>
-                  <th className="px-4 py-3 text-center font-semibold">STATUS</th>
-                  <th className="px-4 py-3 text-center font-semibold">ACTIONS</th>
+                  <th className="w-[82px] px-2.5 py-3 text-left font-semibold">DATE</th>
+                  <th className="w-[140px] px-2.5 py-3 text-left font-semibold">VOUCHER NO</th>
+                  <th className="w-[78px] px-2.5 py-3 text-left font-semibold">TYPE</th>
+                  <th className="w-[200px] px-2.5 py-3 text-left font-semibold">PARTICULARS</th>
+                  <th className="w-[78px] px-2.5 py-3 text-right font-semibold">CASH +</th>
+                  <th className="w-[78px] px-2.5 py-3 text-right font-semibold">CASH -</th>
+                  <th className="w-[78px] px-2.5 py-3 text-right font-semibold">BANK +</th>
+                  <th className="w-[78px] px-2.5 py-3 text-right font-semibold">BANK -</th>
+                  <th className="w-[170px] px-2.5 py-3 text-left font-semibold">DEBIT ACCOUNT</th>
+                  <th className="w-[170px] px-2.5 py-3 text-left font-semibold">CREDIT ACCOUNT</th>
+                  <th className="w-[86px] px-2.5 py-3 text-right font-semibold">DEBIT</th>
+                  <th className="w-[86px] px-2.5 py-3 text-right font-semibold">CREDIT</th>
+                  <th className="w-[92px] px-2.5 py-3 text-right font-semibold">BALANCE</th>
+                  <th className="w-[86px] px-2.5 py-3 text-center font-semibold">STATUS</th>
+                  <th className="w-[110px] px-2.5 py-3 text-center font-semibold">ACTIONS</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -1700,8 +1740,8 @@ export default function ProjectDetailPage() {
                         {v.type}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 font-medium text-gray-800 max-w-sm truncate" title={v.description}>
-                      {v.description || "-"}
+                    <td className="px-3 py-2.5 font-medium text-gray-800" title={v.description}>
+                      <span className="block max-w-[240px] truncate">{v.description || "-"}</span>
                     </td>
                     <td className="px-4 py-2.5 text-right font-bold text-green-700">
                       {v.cashIn ? formatCurrency(v.cashIn) : "-"}
@@ -1715,11 +1755,11 @@ export default function ProjectDetailPage() {
                     <td className="px-4 py-2.5 text-right font-bold text-red-600">
                       {v.bankOut ? formatCurrency(v.bankOut) : "-"}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-700 max-w-xs truncate" title={v.debitAccounts}>
-                      {v.debitAccounts || "-"}
+                    <td className="px-3 py-2.5 text-gray-700" title={v.debitAccounts}>
+                      <span className="block max-w-[200px] truncate">{v.debitAccounts || "-"}</span>
                     </td>
-                    <td className="px-4 py-2.5 text-gray-700 max-w-xs truncate" title={v.creditAccounts}>
-                      {v.creditAccounts || "-"}
+                    <td className="px-3 py-2.5 text-gray-700" title={v.creditAccounts}>
+                      <span className="block max-w-[200px] truncate">{v.creditAccounts || "-"}</span>
                     </td>
                     <td className="px-4 py-2.5 text-right font-bold text-blue-700">
                       {v.debitAmount ? formatCurrency(v.debitAmount) : "-"}
@@ -1782,6 +1822,7 @@ export default function ProjectDetailPage() {
                 </tr>
               </tbody>
             </table>
+            </div>
           </div>
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
