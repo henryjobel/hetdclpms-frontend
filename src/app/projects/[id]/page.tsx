@@ -6,7 +6,7 @@ import { MainLayout } from "@/components/layout/main-layout";
 import { useAuth } from "@/contexts/auth-context";
 import { projectsApi, usersApi, accountsApi } from "@/lib/api";
 import { confirmAction } from "@/lib/feedback";
-import { exportRowsToPdf, exportRowsToXlsx, type ExportColumn } from "@/lib/export-utils";
+import { exportAccountBookToPdf, exportRowsToPdf, exportRowsToXlsx, type ExportColumn } from "@/lib/export-utils";
 import {
   AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip,
   ResponsiveContainer, BarChart, Bar,
@@ -111,6 +111,15 @@ function parseEndDate(value: string) {
 
 function formatMonthLabel(date: Date) {
   return date.toLocaleDateString("en-BD", { month: "short", year: "numeric" });
+}
+
+function accountBookAccountLabel(account: { code: string; name: string; type: string }) {
+  if (account.type === "BANK") return `${account.code} - Bank Account`;
+  return `${account.code} - ${account.name}`;
+}
+
+function projectAccountOptionLabel(account: { code: string; name: string; type: string }) {
+  return accountBookAccountLabel(account);
 }
 
 // ─────────────────────── Countdown ───────────────────────────────────────────
@@ -586,8 +595,8 @@ export default function ProjectDetailPage() {
           bankBalance: runningBank,
           debitAmount: debits.reduce((sum, entry) => sum + entry.debit, 0),
           creditAmount: credits.reduce((sum, entry) => sum + entry.credit, 0),
-          debitAccounts: debits.map((entry) => `${entry.account.code} - ${entry.account.name}`).join(", "),
-          creditAccounts: credits.map((entry) => `${entry.account.code} - ${entry.account.name}`).join(", "),
+          debitAccounts: debits.map((entry) => accountBookAccountLabel(entry.account)).join(", "),
+          creditAccounts: credits.map((entry) => accountBookAccountLabel(entry.account)).join(", "),
         };
       });
 
@@ -662,33 +671,32 @@ export default function ProjectDetailPage() {
 
   const accountBookRows = accountBookPeriod.rows;
 
-  const accountBookExportColumns: ExportColumn<(typeof accountBookRows)[number]>[] = [
-    { header: "Date", value: (row) => formatDate(row.voucherDate) },
-    { header: "Voucher No", value: (row) => row.voucherNo },
-    { header: "Type", value: (row) => row.type },
-    { header: "Particulars", value: (row) => row.description || "-" },
-    { header: "BOQ Item", value: (row) => row.boqItem?.description || "Not linked" },
-    { header: "Cash In", value: (row) => row.cashIn || "" },
-    { header: "Cash Out", value: (row) => row.cashOut || "" },
-    { header: "Bank In", value: (row) => row.bankIn || "" },
-    { header: "Bank Out", value: (row) => row.bankOut || "" },
-    { header: "Debit", value: (row) => row.debitAmount || "" },
-    { header: "Credit", value: (row) => row.creditAmount || "" },
-    { header: "Balance", value: (row) => row.balance },
-  ];
-
   function downloadAccountBookPdf() {
     if (!project) return;
-    exportRowsToPdf({
+    exportAccountBookToPdf({
       filename: `${project.name}-account-book`,
-      title: `${project.name} - Account Book`,
-      subtitle: `${formatDate(bookStartDate)} to ${formatDate(bookEndDate)}`,
-      summary: [
-        `Opening: ${formatCurrency(accountBookPeriod.openingBalance)} | Received: ${formatCurrency(accountBookPeriod.periodReceived)} | Payment: ${formatCurrency(accountBookPeriod.periodPayment)} | Closing: ${formatCurrency(accountBookPeriod.closingBalance)}`,
-        `Cash Closing: ${formatCurrency(accountBookPeriod.closingCash)} | Bank Closing: ${formatCurrency(accountBookPeriod.closingBank)}`,
-      ],
-      columns: accountBookExportColumns,
-      rows: accountBookRows,
+      month: `${formatDate(bookStartDate)} - ${formatDate(bookEndDate)}`,
+      organization: project.name,
+      summary: {
+        opening: accountBookPeriod.openingBalance,
+        received: accountBookPeriod.periodReceived,
+        payment: accountBookPeriod.periodPayment,
+        closing: accountBookPeriod.closingBalance,
+        cashClosing: accountBookPeriod.closingCash,
+        bankClosing: accountBookPeriod.closingBank,
+      },
+      rows: accountBookRows.map((row) => ({
+        date: new Date(row.voucherDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+        voucherNo: row.voucherNo,
+        particulars: row.description || row.type,
+        party: row.boqItem?.description || row.debitAccounts || row.creditAccounts || "Not linked",
+        cashIn: row.cashIn,
+        cashOut: row.cashOut,
+        bankIn: row.bankIn,
+        bankOut: row.bankOut,
+        totalIn: row.received,
+        totalOut: row.payment,
+      })),
     });
   }
 
@@ -2682,7 +2690,7 @@ export default function ProjectDetailPage() {
                   >
                     <option value="">Select source account</option>
                     {accounts.filter((account) => ["CASH", "BANK"].includes(account.type)).map((account) => (
-                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                      <option key={account.id} value={account.id}>{projectAccountOptionLabel(account)}</option>
                     ))}
                   </select>
                 </div>
@@ -2696,7 +2704,7 @@ export default function ProjectDetailPage() {
                   >
                     <option value="">Select destination account</option>
                     {accounts.filter((account) => ["CASH", "BANK"].includes(account.type)).map((account) => (
-                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                      <option key={account.id} value={account.id}>{projectAccountOptionLabel(account)}</option>
                     ))}
                   </select>
                 </div>
@@ -2780,7 +2788,7 @@ export default function ProjectDetailPage() {
                   >
                     <option value="">Auto cash/bank</option>
                     {accounts.filter((account) => ["CASH", "BANK", "ASSET"].includes(account.type)).map((account) => (
-                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                      <option key={account.id} value={account.id}>{projectAccountOptionLabel(account)}</option>
                     ))}
                   </select>
                 </div>
@@ -2793,7 +2801,7 @@ export default function ProjectDetailPage() {
                   >
                     <option value="">Auto income head</option>
                     {accounts.filter((account) => account.type === "INCOME" || account.type === "LIABILITY").map((account) => (
-                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                      <option key={account.id} value={account.id}>{projectAccountOptionLabel(account)}</option>
                     ))}
                   </select>
                 </div>
@@ -2930,7 +2938,7 @@ export default function ProjectDetailPage() {
                   >
                     <option value="">Auto expense head</option>
                     {accounts.filter((account) => account.type === "EXPENSE" || account.type === "ASSET").map((account) => (
-                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                      <option key={account.id} value={account.id}>{projectAccountOptionLabel(account)}</option>
                     ))}
                   </select>
                 </div>
@@ -2944,7 +2952,7 @@ export default function ProjectDetailPage() {
                   >
                     <option value="">Auto cash/bank</option>
                     {accounts.filter((account) => ["CASH", "BANK", "LIABILITY"].includes(account.type)).map((account) => (
-                      <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                      <option key={account.id} value={account.id}>{projectAccountOptionLabel(account)}</option>
                     ))}
                   </select>
                 </div>

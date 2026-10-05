@@ -165,8 +165,7 @@ export const mockPurchaseOrders = [
 
 export const mockChartOfAccounts = [
   { id: "1001", name: "Cash in Hand", type: "Asset", balance: 5200000 },
-  { id: "1002", name: "Bank - BRAC Bank", type: "Asset", balance: 45000000 },
-  { id: "1003", name: "Bank - Dutch Bangla", type: "Asset", balance: 28000000 },
+  { id: "1002", name: "Bank Account", type: "Asset", balance: 45000000 },
   { id: "2001", name: "Supplier Payable", type: "Liability", balance: 28000000 },
   { id: "2002", name: "Contractor Payable", type: "Liability", balance: 16000000 },
   { id: "3001", name: "Apartment Sales", type: "Income", balance: 350000000 },

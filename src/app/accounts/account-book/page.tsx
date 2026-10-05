@@ -4,7 +4,7 @@ import { MainLayout } from "@/components/layout/main-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { accountsApi } from "@/lib/api";
-import { exportRowsToPdf, type ExportColumn } from "@/lib/export-utils";
+import { exportAccountBookToPdf } from "@/lib/export-utils";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   ArrowDownLeft,
@@ -155,20 +155,6 @@ export default function AccountBookPage() {
     accountName: `${row.bankAccount.name} (${row.bankAccount.type})`,
   }));
 
-  const exportColumns: ExportColumn<AccountBookExportRow>[] = [
-    { header: "Date", value: (row) => formatDate(row.transDate) },
-    { header: "Type", value: (row) => row.entryType },
-    { header: "Particulars", value: (row) => row.description || "-" },
-    { header: "Account", value: (row) => row.accountName },
-    { header: "Cash In", value: (row) => row.cashIn || "" },
-    { header: "Cash Out", value: (row) => row.cashOut || "" },
-    { header: "Bank In", value: (row) => row.bankIn || "" },
-    { header: "Bank Out", value: (row) => row.bankOut || "" },
-    { header: "Total In", value: (row) => row.totalIn || "" },
-    { header: "Total Out", value: (row) => row.totalOut || "" },
-    { header: "Balance", value: (row) => row.balance },
-  ];
-
   function getLedgerAccountId(accountId: string) {
     const account = accounts.find((item) => item.id === accountId);
     const accountType = isCashAccount(account) ? "CASH" : "BANK";
@@ -176,12 +162,22 @@ export default function AccountBookPage() {
   }
 
   function handleDownloadPdf() {
-    exportRowsToPdf({
+    exportAccountBookToPdf({
       filename: "account-book.pdf",
-      title: "Account Book",
-      subtitle: "Cash, bank, receipt, payment and contra register",
-      columns: exportColumns,
-      rows: exportRows,
+      month: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+      organization: "Cash, bank, receipt and payment register",
+      rows: exportRows.map((row) => ({
+        date: formatDate(row.transDate),
+        voucherNo: row.id.slice(-8).toUpperCase(),
+        particulars: row.description || row.entryType,
+        party: row.accountName,
+        cashIn: row.cashIn,
+        cashOut: row.cashOut,
+        bankIn: row.bankIn,
+        bankOut: row.bankOut,
+        totalIn: row.totalIn,
+        totalOut: row.totalOut,
+      })),
     });
   }
 

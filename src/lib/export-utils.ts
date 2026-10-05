@@ -167,3 +167,18 @@ export function exportRowsToPdf<T>(options: {
   downloadBlob(buildPdf(objects), cleanFilename(options.filename).replace(/\.pdf$/i, "") + ".pdf");
   showToast("PDF file downloaded", "success");
 }
+
+export interface AccountBookPdfRow {
+  date: string;
+  voucherNo: string;
+  particulars: string;
+  party: string;
+  cashIn?: number;
+  cashOut?: number;
+  bankIn?: number;
+  bankOut?: number;
+  totalIn?: number;
+  totalOut?: number;
+}
+
+export { exportAccountBookToPdf } from "./account-book-pdf";
