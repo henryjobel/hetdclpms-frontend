@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronRight, Search, Settings, Bell,
   LayoutGrid, Folder, ClipboardList, Receipt,
   Landmark, Phone, TrendingUp, DraftingCompass,
-  Loader2, UserCircle,
+  Loader2, UserCircle, Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -312,10 +312,10 @@ export default function ProjectModuleLayout({ children }: { children: React.Reac
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="flex items-center gap-2 px-3 py-2">
+        <div className="flex items-center gap-2 px-3 py-2 overflow-visible">
           <Link href="/project-module" className="mr-2 flex-shrink-0">
-            <div className="w-10 h-10 rounded-full border-2 border-gray-200 flex items-center justify-center bg-white">
-              <span className="text-[10px] font-bold text-gray-600 text-center leading-tight">Somikaron IT Ltd</span>
+            <div className="w-10 h-10 rounded-full border-2 border-gray-200 flex items-center justify-center bg-white" aria-label="Project module home">
+              <Building2 className="w-5 h-5 text-gray-600" aria-hidden="true" />
             </div>
           </Link>
 

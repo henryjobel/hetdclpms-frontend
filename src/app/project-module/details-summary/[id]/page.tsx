@@ -181,8 +181,10 @@ export default function ProjectDetailPage() {
   const profitLoss = salesRevenue - cost;
 
   const chartData = progressLogs.length > 0
-    ? progressLogs.map((l) => ({
-        date: new Date(l.logDate ?? l.date ?? Date.now()).toLocaleDateString("en-BD", { month: "short", day: "numeric" }),
+      ? progressLogs.map((l) => ({
+        date: l.logDate || l.date
+          ? new Date(l.logDate ?? l.date as string).toLocaleDateString("en-BD", { month: "short", day: "numeric" })
+          : "Unknown",
         working: Number(l.percentage ?? l.workingProgress ?? 0),
         financial: Number(l.financialProgress ?? l.percentage ?? 0),
       }))

@@ -69,8 +69,8 @@ export default function BalanceSheetPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(data?.assets ?? []).map((item) => (
-                <div key={item.name} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+              {(data?.assets ?? []).map((item, index) => (
+                <div key={`${item.name}-${index}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                   <span className="text-sm text-gray-700">{item.name}</span>
                   <span className="text-sm font-semibold text-blue-700">{formatCurrency(item.amount)}</span>
                 </div>
@@ -95,8 +95,8 @@ export default function BalanceSheetPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {(data?.liabilities ?? []).map((item) => (
-                  <div key={item.name} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                {(data?.liabilities ?? []).map((item, index) => (
+                  <div key={`${item.name}-${index}`} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                     <span className="text-sm text-gray-700">{item.name}</span>
                     <span className="text-sm font-semibold text-red-600">{formatCurrency(item.amount)}</span>
                   </div>

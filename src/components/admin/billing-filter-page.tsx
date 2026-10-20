@@ -59,6 +59,42 @@ export function BillingFilterPage({ title, subtitle, mode }: BillingFilterPagePr
   const totalAmount = rows.reduce((sum, row) =>
     sum + Number(row.amount || row.totalAmount || row.billedAmount || 0), 0);
 
+  const tableColumns = mode === "bill-invoice" || mode === "vendor-bills"
+    ? [
+        { key: "billNumber", header: "Bill No." },
+        { key: "type", header: "Type" },
+        {
+          key: "supplier",
+          header: "Supplier",
+          render: (value: unknown) => String((value as { name?: string } | null)?.name ?? "-")
+        },
+        {
+          key: "project",
+          header: "Project",
+          render: (value: unknown) => String((value as { name?: string } | null)?.name ?? "-")
+        },
+        {
+          key: "po",
+          header: "Purchase Order",
+          render: (value: unknown) => String((value as { poNumber?: string } | null)?.poNumber ?? "-")
+        },
+        { key: "amount", header: "Amount", render: (value: unknown) => formatCurrency(Number(value || 0)) },
+        { key: "billDate", header: "Bill Date", render: (value: unknown) => value ? formatDate(String(value)) : "-" },
+        { key: "status", header: "Status" },
+      ]
+    : Object.keys(rows[0] || {}).slice(0, 7).map((key) => ({
+        key,
+        header: key.replace(/([A-Z])/g, " $1").trim(),
+        render: (value: unknown) => {
+          if (typeof value === "number") return formatCurrency(value);
+          if (String(key).toLowerCase().includes("date") && value) return formatDate(String(value));
+          if (typeof value === "object" && value !== null) {
+            return String((value as { name?: string; title?: string }).name ?? (value as { title?: string }).title ?? "-");
+          }
+          return String(value ?? "-");
+        },
+      }));
+
   return (
     <MainLayout title={title} subtitle={subtitle}>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -76,18 +112,7 @@ export function BillingFilterPage({ title, subtitle, mode }: BillingFilterPagePr
           ) : (
             <DataTable
               data={rows}
-              columns={Object.keys(rows[0] || {}).slice(0, 7).map((key) => ({
-                key,
-                header: key.replace(/([A-Z])/g, " $1").trim(),
-                render: (value: unknown) => {
-                  if (typeof value === "number") return formatCurrency(value);
-                  if (String(key).toLowerCase().includes("date") && value) return formatDate(String(value));
-                  if (typeof value === "object" && value !== null) {
-                    return String((value as { name?: string; title?: string }).name ?? (value as { title?: string }).title ?? "-");
-                  }
-                  return String(value ?? "-");
-                },
-              }))}
+              columns={tableColumns}
             />
           )}
         </CardContent>

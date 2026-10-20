@@ -555,13 +555,9 @@ export default function ProjectDetailPage() {
   const accountBookPeriod = useMemo(() => {
     const start = parseStartDate(bookStartDate);
     const end = parseEndDate(bookEndDate);
-    let runningBalance = 0;
-    let runningCash = 0;
-    let runningBank = 0;
-
-    const allRows = [...projectVouchers]
+    const sortedVouchers = [...projectVouchers]
       .sort((a, b) => new Date(a.voucherDate).getTime() - new Date(b.voucherDate).getTime())
-      .map((v) => {
+    const allRows = sortedVouchers.map((v, index) => {
         const received = v.type === "RECEIPT" ? v.amount : 0;
         const payment = ["PAYMENT", "JOURNAL", "ADJUSTMENT"].includes(v.type) ? v.amount : 0;
         const debits = (v.ledgerEntries ?? []).filter((entry) => entry.debit > 0);
@@ -578,9 +574,15 @@ export default function ProjectDetailPage() {
         const bankOut = (v.ledgerEntries ?? [])
           .filter((entry) => entry.account.type === "BANK")
           .reduce((sum, entry) => sum + entry.credit, 0);
-        runningBalance += received - payment;
-        runningCash += cashIn - cashOut;
-        runningBank += bankIn - bankOut;
+        const previousRows = sortedVouchers.slice(0, index + 1);
+        const runningBalance = previousRows.reduce((sum, row) =>
+          sum + (row.type === "RECEIPT" ? row.amount : ["PAYMENT", "JOURNAL", "ADJUSTMENT"].includes(row.type) ? -row.amount : 0), 0);
+        const runningCash = previousRows.reduce((sum, row) => sum + (row.ledgerEntries ?? [])
+          .filter((entry) => entry.account.type === "CASH")
+          .reduce((inner, entry) => inner + entry.debit - entry.credit, 0), 0);
+        const runningBank = previousRows.reduce((sum, row) => sum + (row.ledgerEntries ?? [])
+          .filter((entry) => entry.account.type === "BANK")
+          .reduce((inner, entry) => inner + entry.debit - entry.credit, 0), 0);
         return {
           ...v,
           entryDate: new Date(v.voucherDate),

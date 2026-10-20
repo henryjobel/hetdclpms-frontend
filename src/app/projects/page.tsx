@@ -98,13 +98,27 @@ export default function ProjectsPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    const budget = Number(form.budget);
+    const totalUnits = Number(form.totalUnits || 0);
+    if (!Number.isFinite(budget) || budget < 0) {
+      setError("Budget cannot be negative");
+      return;
+    }
+    if (!Number.isInteger(totalUnits) || totalUnits < 0) {
+      setError("Total units must be a whole number greater than or equal to zero");
+      return;
+    }
+    if (form.endDate < form.startDate) {
+      setError("End date cannot be before start date");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
       const payload = {
         ...form,
-        budget: parseFloat(form.budget) || 0,
-        totalUnits: parseInt(form.totalUnits) || 0,
+        budget,
+        totalUnits,
         startDate: new Date(form.startDate).toISOString(),
         endDate: new Date(form.endDate).toISOString(),
       };
@@ -277,12 +291,12 @@ export default function ProjectsPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Budget (৳)</label>
-                  <input type="number" required value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })}
+                  <input type="number" required min="0" step="0.01" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Total Units</label>
-                  <input type="number" value={form.totalUnits} onChange={(e) => setForm({ ...form, totalUnits: e.target.value })}
+                  <input type="number" min="0" step="1" value={form.totalUnits} onChange={(e) => setForm({ ...form, totalUnits: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400" />
                 </div>
                 <div>

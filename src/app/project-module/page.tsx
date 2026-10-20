@@ -63,19 +63,19 @@ function getTimelineProgress(startDate: string, endDate: string): number {
 }
 
 function getWorkProgress(project: Project): number {
+  let progress = 0;
   if (project.tasks && project.tasks.length > 0) {
-    return Math.round(project.tasks.reduce((sum, task) => sum + (task.progress || 0), 0) / project.tasks.length);
+    progress = Math.round(project.tasks.reduce((sum, task) => sum + (task.progress || 0), 0) / project.tasks.length);
+  } else {
+    const latestProgress = project.progressLogs?.[0]?.percentage;
+    progress = latestProgress !== undefined ? Math.round(latestProgress) : getTimelineProgress(project.startDate, project.endDate);
   }
-
-  const latestProgress = project.progressLogs?.[0]?.percentage;
-  if (latestProgress !== undefined) return Math.round(latestProgress);
-
-  return getTimelineProgress(project.startDate, project.endDate);
+  return Math.min(100, Math.max(0, progress));
 }
 
 function getFinancialProgress(project: Project): number {
   if (!project.totalUnits) return 0;
-  return Math.round((project.soldUnits / project.totalUnits) * 100);
+  return Math.min(100, Math.max(0, Math.round((project.soldUnits / project.totalUnits) * 100)));
 }
 
 const STATUS_STYLE: Record<TrafficStatus, { bg: string; text: string }> = {
@@ -167,16 +167,16 @@ export default function ProjectModulePage() {
   const filteredApprovals = pendingApprovals.filter((item) => {
     const keyword = voucherSearch.toLowerCase();
     return (
-      item.project.toLowerCase().includes(keyword) ||
-      item.reference.toLowerCase().includes(keyword) ||
-      item.type.toLowerCase().includes(keyword) ||
-      item.party.toLowerCase().includes(keyword)
+      (item.project || "").toLowerCase().includes(keyword) ||
+      (item.reference || "").toLowerCase().includes(keyword) ||
+      (item.type || "").toLowerCase().includes(keyword) ||
+      (item.party || "").toLowerCase().includes(keyword)
     );
   });
 
   return (
-    <div className="p-4">
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+    <div className="p-3 sm:p-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
         {statCards.map((s) => (
           <div key={s.label} className={`${s.bg} rounded-xl text-white p-4 text-center`}>
             <p className="text-xs opacity-80 font-medium">{s.label}</p>
@@ -185,8 +185,8 @@ export default function ProjectModulePage() {
         ))}
       </div>
 
-      <div className="flex gap-4">
-        <div className="w-[42%] flex-shrink-0 space-y-3 max-h-[calc(100vh-200px)] overflow-y-auto pr-1">
+      <div className="flex flex-col xl:flex-row gap-4">
+        <div className="w-full xl:w-[42%] flex-shrink-0 space-y-3 xl:max-h-[calc(100vh-200px)] overflow-y-auto pr-1">
           {loading && (
             <div className="text-center py-10 text-gray-400 text-sm">Loading projects...</div>
           )}
@@ -327,7 +327,7 @@ export default function ProjectModulePage() {
           </div>
         </div>
 
-        <div className="w-[22%] flex-shrink-0">
+        <div className="w-full xl:w-[22%] flex-shrink-0">
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm h-full">
             <div className="px-3 py-3 border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Pending Voucher/Invoice</h3>

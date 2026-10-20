@@ -405,7 +405,16 @@ export default function AccountBookPage() {
               )}
 
               <div className="grid grid-cols-2 gap-3">
-                <input required value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} placeholder="Amount" className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" />
+                <input
+                  required
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={form.amount}
+                  onChange={(event) => setForm({ ...form, amount: event.target.value })}
+                  placeholder="Amount"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
                 <input type="date" value={form.transDate} onChange={(event) => setForm({ ...form, transDate: event.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" />
               </div>
 
